@@ -78,7 +78,16 @@ function JsonPanel({ title, value, tone }: { title: string; value: Record<string
 const columns: Column<AuditLog>[] = [
   { key: 'data', header: 'Data/Hora', cell: (l) => <span className="whitespace-nowrap font-mono text-xs">{formatDateTime(l.criadoEm)}</span> },
   { key: 'usuario', header: 'Usuário', cell: (l) => <UserCell name={l.usuarioNome} /> },
-  { key: 'acao', header: 'Ação', cell: (l) => <Badge tone={ACOES[l.acao].tone}>{ACOES[l.acao].label}</Badge> },
+  {
+    key: 'acao',
+    header: 'Ação',
+    cell: (l) => (
+      <div className="flex flex-col items-start gap-1">
+        <Badge tone={ACOES[l.acao].tone}>{ACOES[l.acao].label}</Badge>
+        {l.acaoDetalhe && <span className="font-mono text-[10px] text-brand-muted">{l.acaoDetalhe}</span>}
+      </div>
+    ),
+  },
   { key: 'entidade', header: 'Entidade', cell: (l) => <div><p className="font-semibold text-brand-darker">{l.entidade}</p><p className="font-mono text-xs text-brand-muted">{l.entidadeId}</p></div> },
   { key: 'diff', header: 'Alteração (JSONB)', cell: (l) => <InlineDiff log={l} /> },
   { key: 'ip', header: 'IP', cell: (l) => <span className="font-mono text-xs text-brand-muted">{l.ip}</span> },
@@ -97,7 +106,7 @@ export function AuditoriaView() {
     exportCsv(`auditoria-${new Date().toISOString().slice(0, 10)}`, data?.data ?? [], [
       { header: 'Data/Hora', value: (l) => formatDateTime(l.criadoEm) },
       { header: 'Usuário', value: (l) => l.usuarioNome },
-      { header: 'Ação', value: (l) => ACOES[l.acao].label },
+      { header: 'Ação', value: (l) => l.acaoDetalhe ?? ACOES[l.acao].label },
       { header: 'Entidade', value: (l) => l.entidade },
       { header: 'ID', value: (l) => l.entidadeId },
       { header: 'Valor Antigo', value: (l) => JSON.stringify(l.valorAntigo) },

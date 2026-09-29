@@ -17,6 +17,7 @@ import {
   Select,
   StatCard,
   ToggleGroup,
+  useToast,
 } from '@/components/ui';
 import { useDebounce, useFilters } from '@/hooks/use-filters';
 import { exportCsv } from '@/lib/csv';
@@ -25,7 +26,7 @@ import { formatDateTime } from '@/lib/format';
 import type { ChamadoFiltros, StatusChamado } from '@/types';
 import { useCategoriaOptions, useTecnicoOptions } from '@/features/cadastros/use-cadastros';
 import { useAtualizarStatus, useChamados } from '../hooks/use-chamados';
-import { PRIORIDADE_OPTIONS, STATUS_META, STATUS_OPTIONS } from './chamado-badges';
+import { PRIORIDADE_OPTIONS, STATUS_META, STATUS_OPTIONS, TRANSICOES } from './chamado-badges';
 import { chamadoColumns } from './chamado-columns';
 import { KanbanBoard } from './kanban-board';
 
@@ -45,11 +46,27 @@ export function FilaGlobalView() {
   const categorias = useCategoriaOptions();
   const tecnicos = useTecnicoOptions();
   const { mutate: mover } = useAtualizarStatus();
+  const toast = useToast();
 
   const urlSearch = params.get('search') ?? '';
   useEffect(() => setFilter('search', urlSearch), [urlSearch, setFilter]);
 
-  const onMove = useCallback((id: number, status: StatusChamado) => mover({ id, input: { status } }), [mover]);
+  const rows = data?.data;
+  const onMove = useCallback(
+    (id: number, status: StatusChamado) => {
+      const atual = rows?.find((c) => c.id === id)?.status;
+      if (!atual) return;
+      if (!TRANSICOES[atual].includes(status)) {
+        return toast.error(`Transição não permitida: ${STATUS_META[atual].label} → ${STATUS_META[status].label}.`);
+      }
+      if (status === 'PENDENTE' || status === 'RESOLVIDO') {
+        toast.info(status === 'PENDENTE' ? 'Informe o motivo da pausa no chamado.' : 'Informe a resolução no chamado.');
+        return router.push(`/chamados/${id}`);
+      }
+      mover({ id, input: { status } });
+    },
+    [rows, mover, router, toast],
+  );
 
   const stats = useMemo(() => {
     const rows = data?.data ?? [];

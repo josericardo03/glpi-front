@@ -190,13 +190,14 @@ export const ativos: AtivoDetalhe[] = [
   ['NET-0031', 'Switch Core Cisco 9300', 'REDE', 'FOC2231X0AB', 'Equipe Infra', 'EM_USO', 'Data Center 01', 'Cisco', 'Catalyst 9300', 93],
   ['SW-1002', 'Microsoft 365 E3', 'LICENCA', 'MS-E3-2025-88', 'TI Corporativo', 'EM_USO', 'Nuvem', 'Microsoft', 'M365 E3', 100],
   ['ASSET-6120', 'Dell Latitude 5440', 'NOTEBOOK', 'DL-5440-ZZ1', 'Estoque TI', 'ESTOQUE', 'Sede - São Paulo', 'Dell', 'Latitude 5440', 100],
-  ['DSK-0402', 'Desktop OptiPlex 7010', 'DESKTOP', 'OPX-7010-332', 'Joana Dark', 'DESCARTADO', 'Sede - São Paulo', 'Dell', 'OptiPlex 7010', 12],
+  ['DSK-0402', 'Desktop OptiPlex 7010', 'OUTRO', 'OPX-7010-332', 'Joana Dark', 'DESCARTADO', 'Sede - São Paulo', 'Dell', 'OptiPlex 7010', 12],
 ].map(([codigo, nome, tipo, numeroSerie, responsavelNome, status, localizacao, fabricante, modelo, saude], i) => ({
   id: i + 1,
   codigo: codigo as string,
   nome: nome as string,
   tipo: tipo as AtivoDetalhe['tipo'],
   numeroSerie: numeroSerie as string,
+  responsavelId: null,
   responsavelNome: responsavelNome as string,
   status: status as AtivoDetalhe['status'],
   localizacao: localizacao as string,
@@ -340,10 +341,10 @@ export const integracoes: Integracao[] = [
 ];
 
 export const clientes: Cliente[] = [
-  { id: 1, razaoSocial: 'Empresa Matriz S.A.', nomeFantasia: 'Matriz Corp', cnpj: '12.345.678/0001-90', dominio: 'matriz.portal-itsm.com.br', plano: 'ENTERPRISE', totalUsuarios: 1284, status: 'ATIVO', criadoEm: ago(525600) },
-  { id: 2, razaoSocial: 'Logística Rápida Ltda.', nomeFantasia: 'LogRápida', cnpj: '98.765.432/0001-10', dominio: 'lograpida.portal-itsm.com.br', plano: 'PROFISSIONAL', totalUsuarios: 312, status: 'ATIVO', criadoEm: ago(262800) },
-  { id: 3, razaoSocial: 'Clínica Vida Saudável ME', nomeFantasia: 'Vida Saudável', cnpj: '11.222.333/0001-44', dominio: 'vidasaudavel.portal-itsm.com.br', plano: 'BASICO', totalUsuarios: 45, status: 'TRIAL', criadoEm: ago(20160) },
-  { id: 4, razaoSocial: 'Construtora Horizonte S.A.', nomeFantasia: 'Horizonte', cnpj: '55.666.777/0001-88', dominio: 'horizonte.portal-itsm.com.br', plano: 'PROFISSIONAL', totalUsuarios: 190, status: 'SUSPENSO', criadoEm: ago(400000) },
+  { id: 1, razaoSocial: 'Empresa Matriz S.A.', nomeFantasia: 'Matriz Corp', cnpj: '12.345.678/0001-90', totalUsuarios: 1284, status: 'ATIVO', criadoEm: ago(525600) },
+  { id: 2, razaoSocial: 'Logística Rápida Ltda.', nomeFantasia: 'LogRápida', cnpj: '98.765.432/0001-10', totalUsuarios: 312, status: 'ATIVO', criadoEm: ago(262800) },
+  { id: 3, razaoSocial: 'Clínica Vida Saudável ME', nomeFantasia: 'Vida Saudável', cnpj: '11.222.333/0001-44', totalUsuarios: 45, status: 'INATIVO', criadoEm: ago(20160) },
+  { id: 4, razaoSocial: 'Construtora Horizonte S.A.', nomeFantasia: 'Horizonte', cnpj: '55.666.777/0001-88', totalUsuarios: 190, status: 'BLOQUEADO', criadoEm: ago(400000) },
 ];
 
 export const auditLogs: AuditLog[] = [

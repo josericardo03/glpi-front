@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Clock, FileText, History, Lock, Paperclip, UserRound } from 'lucide-react';
+import { Clock, Download, FileText, History, Lock, Paperclip, UserRound } from 'lucide-react';
 import { Avatar, Badge, Button, Checkbox, EmptyState, Field, FileDropzone, Input, Textarea, useToast } from '@/components/ui';
+import { getErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatDateTime, formatMinutes, timeAgo } from '@/lib/format';
-import type { ChamadoDetalhe } from '@/types';
+import type { Anexo, ChamadoDetalhe } from '@/types';
 import { useComentar, useUploadAnexo, useWorklog } from '../hooks/use-chamados';
+import { chamadosService } from '../services/chamados.service';
 
 export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
   const [texto, setTexto] = useState('');
@@ -117,10 +119,25 @@ export function AnexosTab({ chamado }: { chamado: ChamadoDetalhe }) {
   const [files, setFiles] = useState<File[]>([]);
   const upload = useUploadAnexo(chamado.id);
   const toast = useToast();
+  const [baixando, setBaixando] = useState<number | null>(null);
 
   async function enviar() {
     await Promise.all(files.map((f) => upload.mutateAsync(f)));
     setFiles([]);
+  }
+
+  async function baixar(anexo: Anexo) {
+    setBaixando(anexo.id);
+    try {
+      const url = URL.createObjectURL(await chamadosService.baixarAnexo(anexo));
+      const link = Object.assign(document.createElement('a'), { href: url, download: anexo.nomeArquivo });
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setBaixando(null);
+    }
   }
 
   return (
@@ -138,9 +155,12 @@ export function AnexosTab({ chamado }: { chamado: ChamadoDetalhe }) {
             <div className="flex-1">
               <p className="text-sm font-medium text-brand-darker">{a.nomeArquivo}</p>
               <p className="text-xs text-brand-muted">
-                {formatBytes(a.tamanhoBytes)} · {a.enviadoPor} · {formatDateTime(a.criadoEm)}
+                {formatBytes(a.tamanhoBytes)} · {formatDateTime(a.criadoEm)}
               </p>
             </div>
+            <Button variant="ghost" size="sm" icon={<Download className="h-4 w-4" />} loading={baixando === a.id} onClick={() => baixar(a)}>
+              Baixar
+            </Button>
           </li>
         ))}
       </ul>

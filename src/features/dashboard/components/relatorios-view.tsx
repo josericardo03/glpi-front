@@ -58,6 +58,11 @@ const SERIES = [
   { key: 'fechados', label: 'Fechado', className: 'bg-slate-300' },
 ];
 
+function categoriasPct(cats: { nome: string; total: number }[]) {
+  const total = cats.reduce((s, c) => s + c.total, 0) || 1;
+  return cats.map((c) => ({ label: c.nome, value: Math.round((c.total / total) * 100), suffix: '%' }));
+}
+
 export function RelatoriosView() {
   const [periodo, setPeriodo] = useState<Periodo>('30d');
   const [page, setPage] = useState(1);
@@ -96,10 +101,10 @@ export function RelatoriosView() {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard label="Total de Chamados Fechados" value={t && formatNumber(t.totalFechados)} icon={<Ticket className="h-5 w-5" />} trend={t?.variacaoPct} trendLabel="vs período anterior" loading={loading} />
         <StatCard label="Tempo Médio de Atendimento" value={t && `${t.tmaMin}m`} trend={t?.tmaVariacaoPct} invertTrend trendLabel="(melhoria)" loading={loading} />
-        <StatCard label="SLA de Atendimento" value={r && `${r.kpis.slaCumpridoPct}%`} trend={-1.2} trendLabel="meta operacional" loading={loading} />
+        <StatCard label="SLA de Atendimento" value={r && `${r.kpis.slaCumpridoPct}%`} trend={r?.kpis.slaVariacaoPct} trendLabel="vs período anterior" loading={loading} />
         <StatCard
           label="Satisfação (CSAT)"
-          value={t && `${t.csat}/5.0`}
+          value={t && (t.csat ? `${t.csat}/5.0` : '—')}
           loading={loading}
           footer={
             <span className="flex gap-0.5 text-status-pendente">
@@ -119,16 +124,7 @@ export function RelatoriosView() {
         <Card>
           <CardHeader title="Chamados por Categoria" />
           <CardBody>
-            <RankList
-              max={100}
-              items={[
-                { label: 'Infraestrutura', value: 32, suffix: '%' },
-                { label: 'Software / ERP', value: 28, suffix: '%' },
-                { label: 'Acessos & Identidade', value: 18, suffix: '%' },
-                { label: 'Hardware / Periféricos', value: 12, suffix: '%' },
-                { label: 'Telefonia', value: 10, suffix: '%' },
-              ]}
-            />
+            {r && <RankList max={100} items={categoriasPct(r.categoriasTop)} />}
           </CardBody>
         </Card>
       </div>

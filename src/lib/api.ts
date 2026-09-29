@@ -3,7 +3,7 @@ import axios, { AxiosError } from 'axios';
 export const TOKEN_KEY = 'itsm_token';
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000/api',
   headers: { 'Content-Type': 'application/json' },
   timeout: 20_000,
 });

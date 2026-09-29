@@ -95,7 +95,14 @@ export function DashboardView() {
           value={k && formatMinutes(k.mttrMin)}
           icon={<Timer className="h-5 w-5" />}
           loading={isLoading}
-          footer={k && <span className="font-medium text-status-critica">{formatMinutes(k.mttrMin - k.mttrMetaMin)} acima da meta</span>}
+          footer={
+            k &&
+            (k.mttrMin > k.mttrMetaMin ? (
+              <span className="font-medium text-status-critica">{formatMinutes(k.mttrMin - k.mttrMetaMin)} acima da meta</span>
+            ) : (
+              <span className="font-medium text-emerald-600">{formatMinutes(k.mttrMetaMin - k.mttrMin)} abaixo da meta</span>
+            ))
+          }
         />
         <StatCard label="Média Tickets / Técnico" value={k?.mediaPorTecnico} icon={<Gauge className="h-5 w-5" />} loading={isLoading} footer="Distribuição equilibrada na fila" />
         <StatCard label="Resolvidos Hoje" value={k?.resolvidosHoje} icon={<Activity className="h-5 w-5" />} tone="dark" loading={isLoading} />

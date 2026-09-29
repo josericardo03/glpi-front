@@ -1,7 +1,7 @@
 import type { ID } from './common';
 
 export type Papel = 'ADMIN' | 'GESTOR' | 'TECNICO' | 'SOLICITANTE';
-export type StatusUsuario = 'ATIVO' | 'DESATIVADO';
+export type StatusUsuario = 'ATIVO' | 'DESATIVADO' | 'PENDENTE_CONFIRMACAO';
 
 /** Tabela `usuarios` */
 export interface Usuario {

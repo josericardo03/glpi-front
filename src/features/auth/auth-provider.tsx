@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKEN_KEY } from '@/lib/api';
+import { PERFIL_RANK, perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import type { LoginInput, Papel, Usuario } from '@/types';
 import { authService } from './services/auth.service';
 
@@ -58,7 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.replace('/login');
   }, [queryClient, router]);
 
-  const hasRole = useCallback((...roles: Papel[]) => !!user && roles.some((r) => user.papeis.includes(r)), [user]);
+  const hasRole = useCallback(
+    (...roles: Papel[]) => {
+      if (!user) return false;
+      const rank = PERFIL_RANK[perfilPrincipal(user.papeis)];
+      return roles.some((r) => rank >= PERFIL_RANK[r]);
+    },
+    [user],
+  );
 
   const value = useMemo(() => ({ user, status, login, logout, hasRole, updateUser: setUser }), [user, status, login, logout, hasRole]);
 

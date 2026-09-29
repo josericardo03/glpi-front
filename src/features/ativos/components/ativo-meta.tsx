@@ -1,13 +1,13 @@
-import { HardDrive, KeyRound, Laptop, Monitor, Network, Server, type LucideIcon } from 'lucide-react';
+import { HardDrive, KeyRound, Laptop, Network, Server, type LucideIcon } from 'lucide-react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import type { StatusAtivo, TipoAtivo } from '@/types';
 
 export const TIPO_ATIVO: Record<TipoAtivo, { label: string; icon: LucideIcon }> = {
   NOTEBOOK: { label: 'Notebook', icon: Laptop },
-  DESKTOP: { label: 'Desktop', icon: Monitor },
   SERVIDOR: { label: 'Servidor', icon: Server },
-  LICENCA: { label: 'Licença', icon: KeyRound },
-  REDE: { label: 'Rede', icon: Network },
+  LICENCA: { label: 'Licença de software', icon: KeyRound },
+  REDE: { label: 'Rede (switch/roteador)', icon: Network },
+  OUTRO: { label: 'Outro', icon: HardDrive },
 };
 
 export const STATUS_ATIVO: Record<StatusAtivo, { label: string; tone: BadgeTone }> = {

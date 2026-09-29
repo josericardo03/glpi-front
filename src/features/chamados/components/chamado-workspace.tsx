@@ -36,9 +36,9 @@ import {
 import { getErrorMessage } from '@/lib/api';
 import { formatDateTime, formatMinutes } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { StatusChamado } from '@/types';
+import type { MotivoPausa, StatusChamado } from '@/types';
 import { useAtualizarStatus, useChamado, usePausar } from '../hooks/use-chamados';
-import { PriorityBadge, slaState, STATUS_OPTIONS, StatusBadge } from './chamado-badges';
+import { MOTIVOS_PAUSA, PriorityBadge, slaState, STATUS_OPTIONS, StatusBadge, TRANSICOES } from './chamado-badges';
 import { AtribuirModal } from './atribuir-modal';
 import { AnexosTab, FollowupsTab, HistoricoTab, WorklogsTab } from './workspace-tabs';
 
@@ -48,7 +48,9 @@ export function ChamadoWorkspace({ id }: { id: number }) {
   const { data: c, isLoading, isError, error, refetch } = useChamado(id);
   const [tab, setTab] = useState<Tab>('followups');
   const [pausaOpen, setPausaOpen] = useState(false);
-  const [motivo, setMotivo] = useState('');
+  const [motivo, setMotivo] = useState<MotivoPausa>('AGUARDANDO_SOLICITANTE');
+  const [resolverOpen, setResolverOpen] = useState(false);
+  const [resolucao, setResolucao] = useState('');
   const [reatribuir, setReatribuir] = useState(false);
   const atualizar = useAtualizarStatus();
   const pausar = usePausar(id);
@@ -58,7 +60,13 @@ export function ChamadoWorkspace({ id }: { id: number }) {
 
   const finalizado = c.status === 'RESOLVIDO' || c.status === 'CONCLUIDO';
   const sla = slaState(c.slaRestanteMin, c.slaTotalMin);
-  const setStatus = (status: StatusChamado) => atualizar.mutate({ id, input: { status } });
+  const statusOptions = STATUS_OPTIONS.filter((o) => o.value === c.status || TRANSICOES[c.status].includes(o.value));
+  const setStatus = (status: StatusChamado) => {
+    if (status === c.status) return;
+    if (status === 'PENDENTE') return setPausaOpen(true);
+    if (status === 'RESOLVIDO') return setResolverOpen(true);
+    atualizar.mutate({ id, input: { status } });
+  };
 
   return (
     <>
@@ -126,12 +134,12 @@ export function ChamadoWorkspace({ id }: { id: number }) {
             <CardHeader title="Ações Rápidas" />
             <CardBody className="space-y-3">
               <Field label="Alterar Status">
-                {(fid) => <Select id={fid} options={STATUS_OPTIONS} value={c.status} onChange={(e) => setStatus(e.target.value as StatusChamado)} disabled={atualizar.isPending} />}
+                {(fid) => <Select id={fid} options={statusOptions} value={c.status} onChange={(e) => setStatus(e.target.value as StatusChamado)} disabled={atualizar.isPending || !TRANSICOES[c.status].length} />}
               </Field>
-              <Button variant="outline" className="w-full" icon={<PauseCircle className="h-4 w-4" />} disabled={finalizado || c.slaPausado} onClick={() => setPausaOpen(true)}>
+              <Button variant="outline" className="w-full" icon={<PauseCircle className="h-4 w-4" />} disabled={!TRANSICOES[c.status].includes('PENDENTE')} onClick={() => setPausaOpen(true)}>
                 Pendenciar (pausar SLA)
               </Button>
-              <Button className="w-full" icon={<CheckCircle2 className="h-4 w-4" />} disabled={finalizado} loading={atualizar.isPending} onClick={() => setStatus('RESOLVIDO')}>
+              <Button className="w-full" icon={<CheckCircle2 className="h-4 w-4" />} disabled={!TRANSICOES[c.status].includes('RESOLVIDO')} loading={atualizar.isPending} onClick={() => setResolverOpen(true)}>
                 Resolver Chamado
               </Button>
             </CardBody>
@@ -192,18 +200,43 @@ export function ChamadoWorkspace({ id }: { id: number }) {
         footer={
           <>
             <Button variant="outline" onClick={() => setPausaOpen(false)}>Cancelar</Button>
-            <Button
-              disabled={motivo.trim().length < 5}
-              loading={pausar.isPending}
-              onClick={() => pausar.mutate({ motivo: motivo.trim() }, { onSuccess: () => { setPausaOpen(false); setMotivo(''); } })}
-            >
+            <Button loading={pausar.isPending} onClick={() => pausar.mutate({ motivo }, { onSuccess: () => setPausaOpen(false) })}>
               Pausar SLA
             </Button>
           </>
         }
       >
-        <Field label="Motivo da pausa" required hint="Ex.: aguardando retorno do fornecedor / usuário.">
-          {(fid) => <Textarea id={fid} value={motivo} onChange={(e) => setMotivo(e.target.value)} />}
+        <Field label="Motivo da pausa" required>
+          {(fid) => <Select id={fid} options={MOTIVOS_PAUSA} value={motivo} onChange={(e) => setMotivo(e.target.value as MotivoPausa)} />}
+        </Field>
+      </Modal>
+
+      <Modal
+        open={resolverOpen}
+        onClose={() => setResolverOpen(false)}
+        title="Resolver chamado"
+        description="Descreva a solução aplicada. O solicitante poderá concluir o chamado em seguida."
+        size="sm"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setResolverOpen(false)}>Cancelar</Button>
+            <Button
+              disabled={resolucao.trim().length < 5}
+              loading={atualizar.isPending}
+              onClick={() =>
+                atualizar.mutate(
+                  { id, input: { status: 'RESOLVIDO', resolucao: resolucao.trim() } },
+                  { onSuccess: () => { setResolverOpen(false); setResolucao(''); } },
+                )
+              }
+            >
+              Resolver
+            </Button>
+          </>
+        }
+      >
+        <Field label="Resolução" required>
+          {(fid) => <Textarea id={fid} value={resolucao} onChange={(e) => setResolucao(e.target.value)} />}
         </Field>
       </Modal>
 

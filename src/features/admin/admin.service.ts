@@ -1,8 +1,11 @@
 import { api } from '@/lib/api';
-import { matches, paginate, request } from '@/lib/http';
+import { assetUrl, byId, currentTenantId, lookups } from '@/lib/backend/lookups';
+import type { ApiAuditLog, ApiBranding, ApiCliente, ApiHistoricoIntegracao, ApiIntegracao, ApiPoliticaSla } from '@/lib/backend/types';
+import { data, matches, paginate, request } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type {
+  AcaoAuditoria,
   AuditLog,
   AuditoriaFiltros,
   Branding,
@@ -13,14 +16,34 @@ import type {
   IntegracaoInput,
   Paginated,
   PoliticaSla,
+  Prioridade,
   TesteIntegracaoResult,
+  TipoIntegracao,
 } from '@/types';
 
+const TIPO_ALVO: Record<string, string> = { INCIDENTE: 'Incidentes', REQUISICAO: 'Requisições', AMBOS: 'Incidentes e requisições' };
+
+function toPolitica(p: ApiPoliticaSla): PoliticaSla {
+  return {
+    id: p.id,
+    prioridade: p.prioridade_alvo as Prioridade,
+    nome: p.nome,
+    descricao: `Aplica-se a: ${TIPO_ALVO[p.tipo_chamado_alvo] ?? p.tipo_chamado_alvo}${p.status !== 'ATIVO' ? ' · inativa' : ''}`,
+    tempoRespostaMin: p.tempo_resposta_min,
+    tempoSolucaoMin: p.tempo_resolucao_min,
+    calendario: 'COMERCIAL',
+    horarioComercialId: p.id_horario_comercial,
+    notificarGestor: false,
+    alertaPercentual: null,
+  };
+}
+
 export const slaService = {
-  politicas: () => request<PoliticaSla[]>(() => api.get('/politicas-sla'), () => db.politicasSla),
+  politicas: () =>
+    request<PoliticaSla[]>(async () => (await data(api.get<ApiPoliticaSla[]>('/politicas-sla'))).map(toPolitica), () => db.politicasSla),
   salvar: (politicas: PoliticaSla[]) =>
     request<PoliticaSla[]>(
-      () => api.post('/admin/politicas-sla', politicas),
+      () => Promise.reject(new Error('A API permite apenas criar novas políticas de SLA; a edição das existentes ainda não está disponível.')),
       () => {
         if (politicas.some((p) => p.tempoRespostaMin >= p.tempoSolucaoMin)) {
           throw new Error('O tempo de resposta deve ser menor que o tempo de solução (HTTP 422).');
@@ -29,23 +52,77 @@ export const slaService = {
         return db.politicasSla;
       },
     ),
-  horarios: () => request<HorarioComercial[]>(() => api.get('/horarios-comerciais'), () => db.horariosComerciais),
+  /** A API não expõe GET de horários comerciais/feriados. */
+  horarios: () => request<HorarioComercial[]>(async () => [], () => db.horariosComerciais),
 };
 
+const BRANDING_PADRAO = { corPrimaria: '#0056B3', corSecundaria: '#0F172A', corDestaque: '#3B82F6', corFundo: '#F4F6F9' };
+
 export const brandingService = {
-  get: () => request<Branding>(() => api.get('/branding'), () => db.branding),
-  salvar: (b: Branding) =>
+  get: () =>
     request<Branding>(
-      () => api.post('/admin/branding', b),
+      async () => {
+        const [b] = await data(api.get<ApiBranding[]>('/branding'));
+        return {
+          nomePortal: b?.nome_portal ?? 'Portal ITSM',
+          fusoHorario: 'America/Sao_Paulo',
+          logoUrl: assetUrl(b?.logo_url ?? null),
+          corPrimaria: b?.cor_primaria ?? BRANDING_PADRAO.corPrimaria,
+          corSecundaria: b?.cor_secundaria ?? BRANDING_PADRAO.corSecundaria,
+          corDestaque: BRANDING_PADRAO.corDestaque,
+          corFundo: b?.cor_fundo ?? BRANDING_PADRAO.corFundo,
+        };
+      },
+      () => db.branding,
+    ),
+  salvar: (b: Branding) =>
+    request<unknown>(
+      () => {
+        if (b.logoUrl?.startsWith('data:')) {
+          return Promise.reject(new Error('A API ainda não aceita upload de logo. Remova a imagem enviada ou use uma URL pública.'));
+        }
+        return data(
+          api.post('/admin/branding', {
+            nome_portal: b.nomePortal,
+            cor_primaria: b.corPrimaria,
+            cor_secundaria: b.corSecundaria,
+            cor_fundo: b.corFundo,
+            ...(b.logoUrl && /^https?:/.test(b.logoUrl) && { logo_url: b.logoUrl.slice(0, 255) }),
+          }),
+        );
+      },
       () => Object.assign(db.branding, b),
     ),
 };
 
+function toIntegracao(i: ApiIntegracao): Integracao {
+  const cfg = i.configuracoes ?? {};
+  return {
+    id: i.id,
+    nome: i.nome,
+    tipo: (i.tipo === 'AD' ? 'LDAP' : i.tipo) as TipoIntegracao,
+    host: String(cfg.host ?? cfg.url ?? ''),
+    porta: Number(cfg.port ?? cfg.porta ?? 0),
+    ativo: i.status === 'ATIVO',
+    ultimoTeste: null,
+    ultimoResultado: null,
+    latenciaMs: null,
+  };
+}
+
 export const integracoesService = {
-  list: () => request<Integracao[]>(() => api.get('/integracoes'), () => db.integracoes),
+  list: () => request<Integracao[]>(async () => (await data(api.get<ApiIntegracao[]>('/integracoes'))).map(toIntegracao), () => db.integracoes),
   create: (input: IntegracaoInput) =>
-    request<Integracao>(
-      () => api.post('/admin/integracoes', input),
+    request<unknown>(
+      () =>
+        data(
+          api.post('/admin/integracoes', {
+            nome: input.nome.trim(),
+            tipo: input.tipo,
+            configuracoes: { host: input.host.trim(), port: input.porta },
+            status: input.ativo ? 'ATIVO' : 'INATIVO',
+          }),
+        ),
       () => {
         const i: Integracao = { ...input, id: uid(), ultimoTeste: null, ultimoResultado: null, latenciaMs: null };
         db.integracoes.push(i);
@@ -54,7 +131,12 @@ export const integracoesService = {
     ),
   testar: (id: number) =>
     request<TesteIntegracaoResult>(
-      () => api.post(`/admin/integracoes/${id}/testar`),
+      async () => {
+        const inicio = performance.now();
+        const r = await data(api.post<ApiHistoricoIntegracao>(`/admin/integracoes/${id}/testar`));
+        const sucesso = r.status === 'SUCESSO';
+        return { sucesso, latenciaMs: sucesso ? Math.round(performance.now() - inicio) : 0, mensagem: r.dados_log ?? (sucesso ? 'Conexão estabelecida.' : 'Falha de conexão.') };
+      },
       async () => {
         await new Promise((r) => setTimeout(r, 700));
         const i = db.integracoes.find((x) => x.id === id)!;
@@ -71,23 +153,74 @@ export const integracoesService = {
 };
 
 export const clientesService = {
-  list: () => request<Cliente[]>(() => api.get('/clientes'), () => db.clientes),
+  list: () =>
+    request<Cliente[]>(
+      async () => {
+        const [rows, usuarios] = await Promise.all([data(api.get<ApiCliente[]>('/clientes')), lookups.usuarios()]);
+        const tenant = currentTenantId();
+        return rows.map((c) => ({
+          id: c.id,
+          razaoSocial: c.razao_social,
+          nomeFantasia: c.nome_fantasia,
+          cnpj: c.cnpj,
+          totalUsuarios: c.id === tenant ? usuarios.length : null,
+          status: c.status as Cliente['status'],
+          criadoEm: c.data_contratacao,
+        }));
+      },
+      () => db.clientes,
+    ),
   create: (input: ClienteInput) =>
-    request<Cliente>(
-      () => api.post('/admin/clientes', input),
+    request<unknown>(
+      () => data(api.post('/admin/clientes', { razao_social: input.razaoSocial, nome_fantasia: input.nomeFantasia, cnpj: input.cnpj, status: input.status })),
       () => {
         if (db.clientes.some((c) => c.cnpj === input.cnpj)) throw new Error('CNPJ já cadastrado (HTTP 409).');
-        const c: Cliente = { ...input, id: uid(), totalUsuarios: 0, status: 'TRIAL', criadoEm: new Date().toISOString() };
+        const c: Cliente = { ...input, id: uid(), totalUsuarios: 0, criadoEm: new Date().toISOString() };
         db.clientes.unshift(c);
         return c;
       },
     ),
 };
 
+/** A API grava códigos como CREATE_CHAMADO / PAUSE_SLA; o filtro da tela usa a categoria. */
+function categoriaAcao(acao: string): AcaoAuditoria {
+  if (/^(CREATE|ADD|INSERT|LINK)/.test(acao)) return 'CREATE';
+  if (/^(DELETE|REMOVE)/.test(acao)) return 'DELETE';
+  if (/LOGIN|LOGOUT|AUTH/.test(acao)) return 'LOGIN';
+  if (/^(UPSERT|CONFIG|EXECUTE|TEST)/.test(acao) || /BRANDING|INTEGRA|SLA_POLICY/.test(acao)) return 'CONFIG';
+  return 'UPDATE';
+}
+
+async function auditoriaReal(f: AuditoriaFiltros): Promise<Paginated<AuditLog>> {
+  const [rows, usuarios] = await Promise.all([data(api.get<ApiAuditLog[]>('/admin/auditoria')), lookups.usuarios()]);
+  const us = byId(usuarios);
+  const logs: AuditLog[] = rows.map((l) => ({
+    id: l.id,
+    criadoEm: l.data_criacao,
+    usuarioNome: l.id_usuario ? (us.get(l.id_usuario)?.nome ?? `Usuário #${l.id_usuario}`) : 'Sistema',
+    acao: categoriaAcao(l.acao),
+    acaoDetalhe: l.acao,
+    entidade: l.tabela_afetada,
+    entidadeId: l.registro_id !== null ? String(l.registro_id) : '—',
+    valorAntigo: l.valor_anterior,
+    valorNovo: l.valor_novo,
+    ip: l.endereco_ip ?? '—',
+  }));
+  return paginate(
+    logs.filter(
+      (l) =>
+        (matches(l.usuarioNome, f.search) || matches(l.entidade, f.search) || matches(l.entidadeId, f.search) || matches(l.acaoDetalhe ?? '', f.search)) &&
+        (!f.acao || l.acao === f.acao),
+    ),
+    f.page,
+    f.pageSize,
+  );
+}
+
 export const auditoriaService = {
   list: (f: AuditoriaFiltros) =>
     request<Paginated<AuditLog>>(
-      () => api.get('/admin/auditoria', { params: f }),
+      () => auditoriaReal(f),
       () =>
         paginate(
           db.auditLogs.filter(

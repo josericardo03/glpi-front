@@ -1,24 +1,25 @@
 import type { ID, PageParams } from './common';
 import type { StatusChamado } from './chamado';
 
-export type TipoAtivo = 'NOTEBOOK' | 'SERVIDOR' | 'LICENCA' | 'REDE' | 'DESKTOP';
+export type TipoAtivo = 'NOTEBOOK' | 'SERVIDOR' | 'LICENCA' | 'REDE' | 'OUTRO';
 export type StatusAtivo = 'EM_USO' | 'ESTOQUE' | 'MANUTENCAO' | 'DESCARTADO';
 
-/** Tabela `ativos` */
+/** Tabela `ativos_cmdb`. Campos `null` não são expostos pela API atual. */
 export interface Ativo {
   id: ID;
   codigo: string;
   nome: string;
   tipo: TipoAtivo;
-  numeroSerie: string;
-  responsavelNome: string;
+  numeroSerie: string | null;
+  responsavelId: ID | null;
+  responsavelNome: string | null;
   status: StatusAtivo;
-  localizacao: string;
-  fabricante: string;
-  modelo: string;
-  dataAquisicao: string;
+  localizacao: string | null;
+  fabricante: string | null;
+  modelo: string | null;
+  dataAquisicao: string | null;
   garantiaAte: string | null;
-  saude: number;
+  saude: number | null;
 }
 
 export interface AtivoFiltros extends PageParams {
@@ -27,14 +28,13 @@ export interface AtivoFiltros extends PageParams {
 }
 
 export interface AtivoInput {
+  codigo: string;
   nome: string;
   tipo: TipoAtivo;
-  numeroSerie: string;
-  responsavelNome: string;
   status: StatusAtivo;
-  localizacao: string;
-  fabricante: string;
-  modelo: string;
+  responsavelId: ID | null;
+  /** yyyy-mm-dd */
+  dataAquisicao: string;
 }
 
 /** Tabela `ativo_especificacoes` (chave/valor) */
@@ -72,6 +72,7 @@ export interface AtivoDetalhe extends Ativo {
 export interface AtivosResumo {
   total: number;
   porTipo: Record<TipoAtivo, number>;
-  saudeFrota: number;
-  licencasExpirando: number;
+  /** % dos ativos não descartados que estão em uso. */
+  disponibilidadePct: number;
+  emManutencao: number;
 }

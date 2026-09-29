@@ -25,7 +25,7 @@ export function AprovacoesView() {
   const decidir = useApiMutation({
     mutationFn: ({ id, input }: { id: number; input: DecisaoInput }) => aprovacoesService.decidir(id, input),
     invalidate: [KEY],
-    successMessage: (a) => `Solicitação #${a.id} ${a.status === 'APROVADA' ? 'aprovada' : 'rejeitada'}.`,
+    successMessage: (_, { id, input }) => `Solicitação #${id} ${input.decisao === 'APROVADA' ? 'aprovada' : 'rejeitada'}.`,
     onSuccess: () => {
       setDecisao(null);
       setJustificativa('');

@@ -57,8 +57,14 @@ export interface ChamadoInput {
   tecnicoId: ID | null;
 }
 
+export type MotivoPausa = 'AGUARDANDO_SOLICITANTE' | 'AGUARDANDO_TERCEIRO' | 'FORNECEDOR_EXTERNO' | 'MANUTENCAO_PROGRAMADA';
+
 export interface AtualizarStatusInput {
   status?: StatusChamado;
+  /** Obrigatória ao resolver. */
+  resolucao?: string;
+  /** Obrigatório ao pendenciar. */
+  motivoPausa?: MotivoPausa;
   grupoId?: ID | null;
   tecnicoId?: ID | null;
 }

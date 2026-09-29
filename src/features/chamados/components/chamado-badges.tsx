@@ -3,7 +3,7 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { formatMinutes } from '@/lib/format';
-import type { Prioridade, StatusChamado } from '@/types';
+import type { MotivoPausa, Prioridade, StatusChamado } from '@/types';
 
 export const STATUS_META: Record<StatusChamado, { label: string; tone: BadgeTone; color: string }> = {
   NOVO: { label: 'Novo', tone: 'novo', color: '#3B82F6' },
@@ -21,6 +21,22 @@ export const PRIORIDADE_META: Record<Prioridade, { label: string; tone: BadgeTon
 };
 
 export const STATUS_OPTIONS = (Object.keys(STATUS_META) as StatusChamado[]).map((s) => ({ value: s, label: STATUS_META[s].label }));
+
+/** Máquina de estados do backend (`assertTransicao`). */
+export const TRANSICOES: Record<StatusChamado, StatusChamado[]> = {
+  NOVO: ['EM_ATENDIMENTO', 'PENDENTE'],
+  EM_ATENDIMENTO: ['PENDENTE', 'RESOLVIDO'],
+  PENDENTE: ['EM_ATENDIMENTO'],
+  RESOLVIDO: ['CONCLUIDO'],
+  CONCLUIDO: [],
+};
+
+export const MOTIVOS_PAUSA: { value: MotivoPausa; label: string }[] = [
+  { value: 'AGUARDANDO_SOLICITANTE', label: 'Aguardando solicitante' },
+  { value: 'AGUARDANDO_TERCEIRO', label: 'Aguardando terceiro' },
+  { value: 'FORNECEDOR_EXTERNO', label: 'Fornecedor externo' },
+  { value: 'MANUTENCAO_PROGRAMADA', label: 'Manutenção programada' },
+];
 export const PRIORIDADE_OPTIONS = (Object.keys(PRIORIDADE_META) as Prioridade[]).map((p) => ({ value: p, label: PRIORIDADE_META[p].label }));
 
 export function StatusBadge({ status, className }: { status: StatusChamado; className?: string }) {

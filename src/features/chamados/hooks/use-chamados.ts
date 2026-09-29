@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput } from '@/types';
+import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput, MotivoPausa } from '@/types';
 import { chamadosService } from '../services/chamados.service';
 
 export const chamadosKeys = {
@@ -37,7 +37,7 @@ export function useAtualizarStatus() {
   return useApiMutation({
     mutationFn: ({ id, input }: { id: number; input: AtualizarStatusInput }) => chamadosService.atualizarStatus(id, input),
     invalidate: [chamadosKeys.all],
-    successMessage: (c) => `Chamado #${c.id} atualizado.`,
+    successMessage: (_, { id }) => `Chamado #${id} atualizado.`,
   });
 }
 
@@ -51,7 +51,7 @@ export function useComentar(id: number) {
 
 export function usePausar(id: number) {
   return useApiMutation({
-    mutationFn: (body: { motivo: string }) => chamadosService.pausar(id, body),
+    mutationFn: (body: { motivo: MotivoPausa }) => chamadosService.pausar(id, body),
     invalidate: [chamadosKeys.all],
     successMessage: 'SLA pausado e chamado pendenciado.',
   });

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { Bold, Image as ImageIcon, Italic, Link2, List, Send, Tag, UserCog } from 'lucide-react';
+import { Bold, Image as ImageIcon, Italic, Link2, List, Send, Tag } from 'lucide-react';
 import {
   Button,
   Card,
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui';
 import { formatMinutes } from '@/lib/format';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useCategoriaOptions, useGrupoOptions, useTecnicos, useUsuarioOptions } from '@/features/cadastros/use-cadastros';
+import { useCategoriaOptions } from '@/features/cadastros/use-cadastros';
 import type { ChamadoInput, Nivel, Origem, TipoChamado } from '@/types';
 import { useCreateChamado } from '../hooks/use-chamados';
 import { calcularPrioridade, SLA_SOLUCAO_MIN } from '../utils/prioridade';
@@ -42,40 +42,32 @@ const URGENCIAS = [
   { value: 'ALTO', label: 'Alta' },
 ];
 
-type Errors = Partial<Record<'titulo' | 'descricao' | 'categoriaId' | 'solicitanteId', string>>;
+type Errors = Partial<Record<'titulo' | 'descricao' | 'categoriaId', string>>;
 
 export function NovoChamadoForm() {
   const router = useRouter();
   const toast = useToast();
   const { user } = useAuth();
   const categorias = useCategoriaOptions();
-  const grupos = useGrupoOptions();
-  const usuarios = useUsuarioOptions();
-  const { data: tecnicos } = useTecnicos();
   const create = useCreateChamado();
 
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [tipo, setTipo] = useState<TipoChamado>('INCIDENTE');
-  const [origem, setOrigem] = useState<Origem>('TELEFONE');
-  const [solicitanteId, setSolicitanteId] = useState(user ? String(user.id) : '');
+  const [origem, setOrigem] = useState<Origem>('PORTAL');
   const [categoriaId, setCategoriaId] = useState('');
   const [impacto, setImpacto] = useState<Nivel>('BAIXO');
   const [urgencia, setUrgencia] = useState<Nivel>('BAIXO');
-  const [grupoId, setGrupoId] = useState('1');
-  const [tecnicoId, setTecnicoId] = useState('');
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [errors, setErrors] = useState<Errors>({});
 
   const prioridade = calcularPrioridade(impacto, urgencia);
-  const tecnicosDoGrupo = (tecnicos ?? []).filter((t) => !grupoId || t.grupoId === Number(grupoId)).map((t) => ({ value: t.id, label: t.nome }));
 
   function validate(): Errors {
     const e: Errors = {};
     if (titulo.trim().length < 5) e.titulo = 'Informe um título com pelo menos 5 caracteres.';
     if (descricao.trim().length < 10) e.descricao = 'Descreva o problema com mais detalhes.';
     if (!categoriaId) e.categoriaId = 'Selecione uma categoria.';
-    if (!solicitanteId) e.solicitanteId = 'Selecione o solicitante.';
     return e;
   }
 
@@ -95,9 +87,9 @@ export function NovoChamadoForm() {
       impacto,
       urgencia,
       categoriaId: Number(categoriaId),
-      solicitanteId: Number(solicitanteId),
-      grupoId: grupoId ? Number(grupoId) : null,
-      tecnicoId: tecnicoId ? Number(tecnicoId) : null,
+      solicitanteId: user?.id ?? 0,
+      grupoId: null,
+      tecnicoId: null,
     };
     create.mutate({ input, arquivos }, { onSuccess: (c) => router.push(`/chamados/${c.id}`) });
   }
@@ -165,8 +157,8 @@ export function NovoChamadoForm() {
           <Card>
             <CardHeader title="Classificação" icon={<Tag className="h-4 w-4" />} />
             <CardBody className="space-y-4">
-              <Field label="Solicitante" required error={errors.solicitanteId}>
-                {(id) => <Select id={id} placeholder="Buscar usuário..." options={usuarios} value={solicitanteId} onChange={(e) => setSolicitanteId(e.target.value)} invalid={!!errors.solicitanteId} />}
+              <Field label="Solicitante" hint="O chamado é aberto em nome do usuário logado.">
+                {(id) => <Input id={id} value={user?.nome ?? ''} disabled />}
               </Field>
               <Field label="Categoria" required error={errors.categoriaId}>
                 {(id) => <Select id={id} placeholder="Selecione uma categoria..." options={categorias} value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} invalid={!!errors.categoriaId} />}
@@ -186,29 +178,6 @@ export function NovoChamadoForm() {
                   Definida automaticamente pela matriz Impacto × Urgência. Meta de solução: <strong className="text-slate-200">{formatMinutes(SLA_SOLUCAO_MIN[prioridade])}</strong>.
                 </p>
               </div>
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader title="Atribuição" icon={<UserCog className="h-4 w-4" />} />
-            <CardBody className="space-y-4">
-              <Field label="Grupo Técnico">
-                {(id) => (
-                  <Select
-                    id={id}
-                    placeholder="Sem grupo"
-                    options={grupos}
-                    value={grupoId}
-                    onChange={(e) => {
-                      setGrupoId(e.target.value);
-                      setTecnicoId('');
-                    }}
-                  />
-                )}
-              </Field>
-              <Field label="Técnico Específico">
-                {(id) => <Select id={id} placeholder="Atribuir automaticamente" options={tecnicosDoGrupo} value={tecnicoId} onChange={(e) => setTecnicoId(e.target.value)} />}
-              </Field>
             </CardBody>
           </Card>
 

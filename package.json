@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H localhost -p 5173",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H localhost -p 5173",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

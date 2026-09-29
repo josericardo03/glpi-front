@@ -17,7 +17,7 @@ export const useAtivos = (f: AtivoFiltros) =>
 export const useAtivo = (id: number) => useQuery({ queryKey: ativosKeys.detail(id), queryFn: () => ativosService.get(id) });
 
 export const useCreateAtivo = () =>
-  useApiMutation({ mutationFn: (i: AtivoInput) => ativosService.create(i), invalidate: [ativosKeys.all], successMessage: (a) => `Ativo ${a.codigo} cadastrado.` });
+  useApiMutation({ mutationFn: (i: AtivoInput) => ativosService.create(i), invalidate: [ativosKeys.all], successMessage: (_, i) => `Ativo ${i.codigo.trim().toUpperCase()} cadastrado.` });
 
 export const useAddEspecificacao = (id: number) =>
   useApiMutation({

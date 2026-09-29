@@ -2,6 +2,7 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApiMutation } from '@/hooks/use-api-mutation';
+import type { KbArtigo } from '@/types';
 import { kbService, type ArtigosFiltros } from './kb.service';
 
 export const kbKeys = {
@@ -22,6 +23,9 @@ export function useKbFeedback(id: number) {
   return useApiMutation({
     mutationFn: (util: boolean) => kbService.feedback(id, util),
     successMessage: 'Obrigado pelo seu feedback!',
-    onSuccess: (artigo) => qc.setQueryData(kbKeys.artigo(id), artigo),
+    onSuccess: (_, util) =>
+      qc.setQueryData<KbArtigo>(kbKeys.artigo(id), (a) =>
+        a && { ...a, meuVoto: util ? 'UTIL' : 'NAO_UTIL', votosUteis: a.votosUteis + (util ? 1 : 0), votosNaoUteis: a.votosNaoUteis + (util ? 0 : 1) },
+      ),
   });
 }

@@ -5,7 +5,6 @@ import { Download, Pencil, ShieldCheck, UserCheck, UserPlus, Users } from 'lucid
 import {
   Badge,
   Button,
-  Checkbox,
   DataTable,
   ErrorState,
   Field,
@@ -23,6 +22,7 @@ import {
 } from '@/components/ui';
 import { useDebounce, useFilters } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
+import { perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import { exportCsv } from '@/lib/csv';
 import { formatNumber } from '@/lib/format';
 import type { Papel, StatusUsuario, Usuario, UsuarioInput } from '@/types';
@@ -36,6 +36,12 @@ const PAPEIS: { value: Papel; label: string; tone: BadgeTone }[] = [
   { value: 'SOLICITANTE', label: 'Solicitante', tone: 'neutral' },
 ];
 const PAPEL_TONE = Object.fromEntries(PAPEIS.map((p) => [p.value, p])) as Record<Papel, (typeof PAPEIS)[number]>;
+const STATUS_USUARIO: Record<StatusUsuario, { label: string; tone: BadgeTone }> = {
+  ATIVO: { label: 'Ativo', tone: 'success' },
+  DESATIVADO: { label: 'Desativado', tone: 'neutral' },
+  PENDENTE_CONFIRMACAO: { label: 'Pendente', tone: 'pendente' },
+};
+const STATUS_OPTIONS = (Object.keys(STATUS_USUARIO) as StatusUsuario[]).map((s) => ({ value: s, label: STATUS_USUARIO[s].label }));
 const EMPTY: UsuarioInput = { nome: '', email: '', cargo: '', departamentoId: null, papeis: ['SOLICITANTE'], status: 'ATIVO', senha: '' };
 const INITIAL: UsuarioFiltros = { page: 1, pageSize: 10, search: '', departamentoId: '', papel: '', status: '' };
 
@@ -51,11 +57,7 @@ export function UsuariosView() {
 
   function openForm(u: Usuario | 'new') {
     setEditing(u);
-    setForm(u === 'new' ? EMPTY : { nome: u.nome, email: u.email, cargo: u.cargo, departamentoId: u.departamentoId, papeis: u.papeis, status: u.status });
-  }
-
-  function togglePapel(p: Papel) {
-    setForm((f) => ({ ...f, papeis: f.papeis.includes(p) ? f.papeis.filter((x) => x !== p) : [...f.papeis, p] }));
+    setForm(u === 'new' ? EMPTY : { nome: u.nome, email: u.email, cargo: u.cargo, departamentoId: u.departamentoId, papeis: [perfilPrincipal(u.papeis)], status: u.status });
   }
 
   function onSubmit(e: FormEvent) {
@@ -71,7 +73,7 @@ export function UsuariosView() {
       { key: 'dep', header: 'Departamento', cell: (u) => u.departamentoNome ?? '—' },
       { key: 'cargo', header: 'Cargo', cell: (u) => <span className="text-sm">{u.cargo}</span> },
       { key: 'perfil', header: 'Perfil', cell: (u) => <div className="flex flex-wrap gap-1">{u.papeis.map((p) => <Badge key={p} tone={PAPEL_TONE[p].tone}>{PAPEL_TONE[p].label}</Badge>)}</div> },
-      { key: 'status', header: 'Status', cell: (u) => <Badge tone={u.status === 'ATIVO' ? 'success' : 'neutral'} dot>{u.status === 'ATIVO' ? 'Ativo' : 'Desativado'}</Badge> },
+      { key: 'status', header: 'Status', cell: (u) => <Badge tone={STATUS_USUARIO[u.status].tone} dot>{STATUS_USUARIO[u.status].label}</Badge> },
       {
         key: 'acoes',
         header: <span className="sr-only">Ações</span>,
@@ -134,7 +136,7 @@ export function UsuariosView() {
         <Field label="Departamento">{(id) => <Select id={id} placeholder="Todos" options={departamentos} value={filters.departamentoId} onChange={(e) => setFilter('departamentoId', e.target.value ? Number(e.target.value) : '')} />}</Field>
         <Field label="Perfil">{(id) => <Select id={id} placeholder="Todos" options={PAPEIS} value={filters.papel} onChange={(e) => setFilter('papel', e.target.value as Papel | '')} />}</Field>
         <Field label="Status">
-          {(id) => <Select id={id} placeholder="Todos" options={[{ value: 'ATIVO', label: 'Ativo' }, { value: 'DESATIVADO', label: 'Desativado' }]} value={filters.status} onChange={(e) => setFilter('status', e.target.value as StatusUsuario | '')} />}
+          {(id) => <Select id={id} placeholder="Todos" options={STATUS_OPTIONS} value={filters.status} onChange={(e) => setFilter('status', e.target.value as StatusUsuario | '')} />}
         </Field>
       </FilterBar>
 
@@ -165,27 +167,24 @@ export function UsuariosView() {
       >
         <form id="form-usuario" onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
           <Field label="Nome completo" required className="sm:col-span-2">{(id) => <Input id={id} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />}</Field>
-          <Field label="E-mail corporativo" required>{(id) => <Input id={id} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}</Field>
+          <Field label="E-mail corporativo" required hint={editing !== 'new' ? 'O e-mail não pode ser alterado.' : undefined}>
+            {(id) => <Input id={id} type="email" value={form.email} disabled={editing !== 'new'} onChange={(e) => setForm({ ...form, email: e.target.value })} />}
+          </Field>
           <Field label="Cargo">{(id) => <Input id={id} value={form.cargo} onChange={(e) => setForm({ ...form, cargo: e.target.value })} />}</Field>
           <Field label="Departamento">
             {(id) => <Select id={id} placeholder="Nenhum" options={departamentos} value={form.departamentoId ?? ''} onChange={(e) => setForm({ ...form, departamentoId: e.target.value ? Number(e.target.value) : null })} />}
           </Field>
           <Field label="Status">
-            {(id) => <Select id={id} options={[{ value: 'ATIVO', label: 'Ativo' }, { value: 'DESATIVADO', label: 'Desativado' }]} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StatusUsuario })} />}
+            {(id) => <Select id={id} options={STATUS_OPTIONS} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StatusUsuario })} />}
+          </Field>
+          <Field label="Perfil (RBAC)" required hint="Hierárquico: Admin > Gestor > Técnico > Solicitante." className="sm:col-span-2">
+            {(id) => <Select id={id} options={PAPEIS} value={form.papeis[0]} onChange={(e) => setForm({ ...form, papeis: [e.target.value as Papel] })} />}
           </Field>
           {editing === 'new' && (
             <Field label="Senha inicial" required hint="Mínimo de 8 caracteres." className="sm:col-span-2">
               {(id) => <Input id={id} type="password" autoComplete="new-password" value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} />}
             </Field>
           )}
-          <div className="sm:col-span-2">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">Papéis (RBAC) *</p>
-            <div className="flex flex-wrap gap-4">
-              {PAPEIS.map((p) => (
-                <Checkbox key={p.value} label={p.label} checked={form.papeis.includes(p.value)} onChange={() => togglePapel(p.value)} />
-              ))}
-            </div>
-          </div>
         </form>
       </Modal>
     </>

@@ -25,6 +25,7 @@ import {
   type Column,
 } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
+import { PERFIL_RANK, perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import { cn } from '@/lib/utils';
 import type { GrupoInput, MembroGrupo } from '@/types';
 import { useAddMembro, useCreateGrupo, useGrupos, useUsuarios } from '../use-cadastros';
@@ -63,7 +64,7 @@ export function GruposView() {
   const tecnicosDisponiveis = useMemo(
     () =>
       (usuarios?.data ?? [])
-        .filter((u) => u.papeis.includes('TECNICO') && u.status === 'ATIVO' && !sel?.membros.some((m) => m.usuarioId === u.id))
+        .filter((u) => PERFIL_RANK[perfilPrincipal(u.papeis)] >= PERFIL_RANK.TECNICO && u.status === 'ATIVO' && !sel?.membros.some((m) => m.usuarioId === u.id))
         .map((u) => ({ value: u.id, label: u.nome })),
     [usuarios, sel],
   );

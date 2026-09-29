@@ -18,7 +18,6 @@ import {
   SearchInput,
   Select,
   StatCard,
-  Textarea,
   type BadgeTone,
   type Column,
 } from '@/components/ui';
@@ -144,7 +143,6 @@ export function DepartamentosView() {
             {(id) => <Input id={id} value={form.sigla} maxLength={12} className="font-mono uppercase" onChange={(e) => setForm({ ...form, sigla: e.target.value.toUpperCase().replace(/\s/g, '') })} />}
           </Field>
           <Field label="Nome" required>{(id) => <Input id={id} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />}</Field>
-          <Field label="Descrição" className="sm:col-span-2">{(id) => <Textarea id={id} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />}</Field>
           <Field label="Gestor Responsável" className="sm:col-span-2">
             {(id) => <Select id={id} placeholder="Selecione..." options={usuarios} value={form.gestorId ?? ''} onChange={(e) => setForm({ ...form, gestorId: e.target.value ? Number(e.target.value) : null })} />}
           </Field>

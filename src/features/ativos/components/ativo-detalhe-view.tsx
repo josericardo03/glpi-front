@@ -20,6 +20,7 @@ import {
 } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import { formatDate } from '@/lib/format';
+import { USE_MOCKS } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import type { AtivoDetalhe, Dependencia, Manutencao } from '@/types';
 import { StatusBadge } from '@/features/chamados/components/chamado-badges';
@@ -89,15 +90,17 @@ export function AtivoDetalheView({ id }: { id: number }) {
     addSpec.mutate({ chave: chave.trim(), valor: valor.trim() }, { onSuccess: () => { setChave(''); setValor(''); } });
   }
 
-  const info: [string, string][] = [
-    ['Fabricante', a.fabricante],
-    ['Modelo', a.modelo],
-    ['Número de Série', a.numeroSerie],
-    ['Responsável', a.responsavelNome],
-    ['Localização', a.localizacao],
-    ['Aquisição', formatDate(a.dataAquisicao)],
-    ['Garantia até', a.garantiaAte ? formatDate(a.garantiaAte) : '—'],
-  ];
+  const info = (
+    [
+      ['Fabricante', a.fabricante],
+      ['Modelo', a.modelo],
+      ['Número de Série', a.numeroSerie],
+      ['Responsável', a.responsavelNome ?? 'Não atribuído'],
+      ['Localização', a.localizacao],
+      ['Aquisição', a.dataAquisicao && formatDate(a.dataAquisicao)],
+      ['Garantia até', a.garantiaAte && formatDate(a.garantiaAte)],
+    ] as [string, string | null][]
+  ).filter((kv): kv is [string, string] => !!kv[1]);
 
   return (
     <>
@@ -115,10 +118,12 @@ export function AtivoDetalheView({ id }: { id: number }) {
               <div className="mt-1.5"><StatusAtivoBadge status={a.status} /></div>
             </div>
           </div>
-          <div className="w-56">
-            <div className="mb-1 flex justify-between text-xs"><span className="font-semibold text-brand-muted">Saúde do ativo</span><strong>{a.saude}%</strong></div>
-            <Progress value={a.saude} tone={a.saude >= 80 ? 'success' : a.saude >= 50 ? 'warning' : 'danger'} size="md" />
-          </div>
+          {a.saude !== null && (
+            <div className="w-56">
+              <div className="mb-1 flex justify-between text-xs"><span className="font-semibold text-brand-muted">Saúde do ativo</span><strong>{a.saude}%</strong></div>
+              <Progress value={a.saude} tone={a.saude >= 80 ? 'success' : a.saude >= 50 ? 'warning' : 'danger'} size="md" />
+            </div>
+          )}
         </CardBody>
       </Card>
 
@@ -127,19 +132,25 @@ export function AtivoDetalheView({ id }: { id: number }) {
           <Card>
             <CardHeader title="Especificações Técnicas" description="Pares chave/valor (ativo_especificacoes)" />
             <CardBody>
-              <dl className="divide-y divide-brand-border rounded-md border border-brand-border">
-                {a.especificacoes.map((s) => (
-                  <div key={s.id} className="grid grid-cols-[180px_1fr] gap-4 px-4 py-2.5 text-sm">
-                    <dt className="font-medium text-brand-muted">{s.chave}</dt>
-                    <dd className="text-brand-darker">{s.valor}</dd>
-                  </div>
-                ))}
-              </dl>
-              <form onSubmit={onSpec} className="mt-4 grid gap-2 sm:grid-cols-[180px_1fr_auto]">
-                <Input placeholder="Chave (ex: CPU)" value={chave} onChange={(e) => setChave(e.target.value)} />
-                <Input placeholder="Valor" value={valor} onChange={(e) => setValor(e.target.value)} />
-                <Button type="submit" variant="dark" loading={addSpec.isPending} icon={<Plus className="h-4 w-4" />}>Adicionar</Button>
-              </form>
+              {a.especificacoes.length === 0 ? (
+                <EmptyState title="Nenhuma especificação cadastrada" />
+              ) : (
+                <dl className="divide-y divide-brand-border rounded-md border border-brand-border">
+                  {a.especificacoes.map((s) => (
+                    <div key={s.id} className="grid grid-cols-[180px_1fr] gap-4 px-4 py-2.5 text-sm">
+                      <dt className="font-medium text-brand-muted">{s.chave}</dt>
+                      <dd className="text-brand-darker">{s.valor}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {USE_MOCKS && (
+                <form onSubmit={onSpec} className="mt-4 grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+                  <Input placeholder="Chave (ex: CPU)" value={chave} onChange={(e) => setChave(e.target.value)} />
+                  <Input placeholder="Valor" value={valor} onChange={(e) => setValor(e.target.value)} />
+                  <Button type="submit" variant="dark" loading={addSpec.isPending} icon={<Plus className="h-4 w-4" />}>Adicionar</Button>
+                </form>
+              )}
             </CardBody>
           </Card>
 
@@ -149,7 +160,10 @@ export function AtivoDetalheView({ id }: { id: number }) {
           </Card>
 
           <Card>
-            <CardHeader title="Histórico de Manutenção" actions={<Button size="sm" variant="outline" icon={<Wrench className="h-4 w-4" />} onClick={() => setManutOpen(true)}>Registrar</Button>} />
+            <CardHeader
+              title="Histórico de Manutenção"
+              actions={USE_MOCKS && <Button size="sm" variant="outline" icon={<Wrench className="h-4 w-4" />} onClick={() => setManutOpen(true)}>Registrar</Button>}
+            />
             <CardBody>
               {a.manutencoes.length === 0 ? (
                 <EmptyState title="Nenhuma manutenção registrada" />

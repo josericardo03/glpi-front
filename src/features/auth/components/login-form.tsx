@@ -19,6 +19,7 @@ export function LoginForm() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (senha.length < 8) return setError('A senha deve ter pelo menos 8 caracteres.');
     setError(null);
     setLoading(true);
     try {

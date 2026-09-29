@@ -69,10 +69,9 @@ export interface Cliente {
   razaoSocial: string;
   nomeFantasia: string;
   cnpj: string;
-  dominio: string;
-  plano: 'BASICO' | 'PROFISSIONAL' | 'ENTERPRISE';
-  totalUsuarios: number;
-  status: 'ATIVO' | 'SUSPENSO' | 'TRIAL';
+  /** `null` quando o tenant não é o do usuário logado (a API só lista usuários do próprio tenant). */
+  totalUsuarios: number | null;
+  status: 'ATIVO' | 'BLOQUEADO' | 'INATIVO';
   criadoEm: string;
 }
 
@@ -80,8 +79,7 @@ export interface ClienteInput {
   razaoSocial: string;
   nomeFantasia: string;
   cnpj: string;
-  dominio: string;
-  plano: Cliente['plano'];
+  status: Cliente['status'];
 }
 
 export type AcaoAuditoria = 'CREATE' | 'UPDATE' | 'DELETE' | 'CONFIG' | 'LOGIN';
@@ -92,6 +90,8 @@ export interface AuditLog {
   criadoEm: string;
   usuarioNome: string;
   acao: AcaoAuditoria;
+  /** Código original da ação (ex.: CREATE_CHAMADO), quando disponível. */
+  acaoDetalhe?: string;
   entidade: string;
   entidadeId: string;
   valorAntigo: Record<string, unknown> | null;

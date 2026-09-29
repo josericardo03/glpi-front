@@ -89,6 +89,7 @@ export function SlaView() {
       <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
         <div className="grid content-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted sm:col-span-2 xl:col-span-1">Políticas por Prioridade</p>
+          {!isLoading && !politicas.length && <p className="text-sm text-brand-muted">Nenhuma política de SLA cadastrada.</p>}
           {isLoading
             ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-24 w-full" />)
             : politicas.map((p) => {
@@ -186,23 +187,35 @@ export function SlaView() {
               <Card>
                 <CardHeader title="Turnos de Atendimento" description={horario?.nome} icon={<Globe2 className="h-5 w-5" />} />
                 <CardBody className="divide-y divide-brand-border p-0">
-                  {horario?.turnos.map((t) => (
-                    <div key={t.dias} className="flex items-center justify-between px-5 py-3 text-sm">
-                      <span className="font-medium text-brand-darker">{t.dias}</span>
-                      <span className="font-mono text-brand-muted">{t.inicio} – {t.fim}</span>
-                    </div>
-                  )) ?? <Skeleton className="m-5 h-16" />}
+                  {!horarios ? (
+                    <Skeleton className="m-5 h-16" />
+                  ) : horario?.turnos.length ? (
+                    horario.turnos.map((t) => (
+                      <div key={t.dias} className="flex items-center justify-between px-5 py-3 text-sm">
+                        <span className="font-medium text-brand-darker">{t.dias}</span>
+                        <span className="font-mono text-brand-muted">{t.inicio} – {t.fim}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="px-5 py-4 text-sm text-brand-muted">Nenhum turno disponível.</p>
+                  )}
                 </CardBody>
               </Card>
               <Card>
                 <CardHeader title="Feriados" description="Não contabilizados no calendário comercial." icon={<CalendarDays className="h-5 w-5" />} />
                 <CardBody className="divide-y divide-brand-border p-0">
-                  {horario?.feriados.map((f) => (
-                    <div key={f.data} className="flex items-center justify-between px-5 py-3 text-sm">
-                      <span className="font-medium text-brand-darker">{f.descricao}</span>
-                      <span className="font-mono text-brand-muted">{formatDate(`${f.data}T12:00:00`)}</span>
-                    </div>
-                  )) ?? <Skeleton className="m-5 h-16" />}
+                  {!horarios ? (
+                    <Skeleton className="m-5 h-16" />
+                  ) : horario?.feriados.length ? (
+                    horario.feriados.map((f) => (
+                      <div key={f.data} className="flex items-center justify-between px-5 py-3 text-sm">
+                        <span className="font-medium text-brand-darker">{f.descricao}</span>
+                        <span className="font-mono text-brand-muted">{formatDate(`${f.data}T12:00:00`)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="px-5 py-4 text-sm text-brand-muted">Nenhum feriado disponível.</p>
+                  )}
                 </CardBody>
               </Card>
             </div>
