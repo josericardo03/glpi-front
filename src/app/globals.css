@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --brand-primary: 0 86 179; /* #0056B3 */
+    --brand-primary-hover: 0 68 148; /* #004494 */
+    --brand-darker: 15 23 42; /* #0F172A */
+    --brand-dark: 30 41 59; /* #1E293B */
+    --brand-accent: 59 130 246; /* #3B82F6 */
+    --brand-bg: 244 246 249; /* #F4F6F9 */
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-brand-bg text-brand-darker;
+  }
+  ::selection {
+    @apply bg-brand-accent/20;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #334155 transparent;
+  }
+}
+
+/* Conteúdo renderizado a partir de Markdown (KB) */
+.prose-kb h2 {
+  @apply mb-3 mt-8 border-l-4 border-brand-primary pl-3 text-lg font-semibold text-brand-darker;
+}
+.prose-kb h3 {
+  @apply mb-2 mt-6 font-semibold text-brand-darker;
+}
+.prose-kb p {
+  @apply my-3 leading-relaxed text-slate-700;
+}
+.prose-kb ul {
+  @apply my-3 list-disc space-y-1.5 pl-6 text-slate-700;
+}
+.prose-kb ol {
+  @apply my-4 space-y-4 pl-0 text-slate-700;
+  counter-reset: step;
+}
+.prose-kb ol > li {
+  @apply relative list-none pl-10;
+  counter-increment: step;
+}
+.prose-kb ol > li::before {
+  content: counter(step);
+  @apply absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full bg-brand-darker text-xs font-bold text-white;
+}
+.prose-kb blockquote {
+  @apply my-5 rounded-r-md border-l-4 border-status-critica bg-red-50 px-4 py-3 text-sm text-red-800;
+}
+.prose-kb code {
+  @apply rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] text-brand-primary;
+}
+.prose-kb strong {
+  @apply font-semibold text-brand-darker;
+}
