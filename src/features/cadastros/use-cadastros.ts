@@ -11,13 +11,16 @@ import {
   tecnicosService,
   usuariosService,
   type UsuarioFiltros,
+  type UsuarioUpdate,
 } from './cadastros.service';
 
 const LOOKUP = { staleTime: 5 * 60_000 };
 
+type FiltrosUsuario = Omit<UsuarioFiltros, 'page' | 'pageSize'>;
+
 export const cadastrosKeys = {
   usuarios: ['usuarios'] as const,
-  usuariosList: (f: UsuarioFiltros) => ['usuarios', f] as const,
+  usuariosList: (f: FiltrosUsuario) => ['usuarios', f] as const,
   departamentos: ['departamentos'] as const,
   categorias: ['categorias'] as const,
   grupos: ['grupos'] as const,
@@ -25,7 +28,7 @@ export const cadastrosKeys = {
 };
 
 // ---------- Queries ----------
-export const useUsuarios = (f: UsuarioFiltros) =>
+export const useUsuarios = (f: FiltrosUsuario = {}) =>
   useQuery({ queryKey: cadastrosKeys.usuariosList(f), queryFn: () => usuariosService.list(f), placeholderData: keepPreviousData });
 export const useDepartamentos = () => useQuery({ queryKey: cadastrosKeys.departamentos, queryFn: departamentosService.list, ...LOOKUP });
 export const useCategorias = () => useQuery({ queryKey: cadastrosKeys.categorias, queryFn: categoriasService.list, ...LOOKUP });
@@ -63,18 +66,28 @@ export function useDepartamentoOptions() {
 }
 
 export function useUsuarioOptions() {
-  const { data } = useUsuarios({ page: 1, pageSize: 500 });
-  return useMemo(() => (data?.data ?? []).filter((u) => u.status === 'ATIVO').map((u) => ({ value: u.id, label: u.nome })), [data]);
+  const { data } = useUsuarios();
+  return useMemo(
+    () =>
+      (data ?? [])
+        .filter((u) => u.status === 'ATIVO')
+        .map((u) => ({ value: u.id, label: u.nome }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [data],
+  );
 }
 
 // ---------- Mutations ----------
+/** Alterações em usuários afetam técnicos (atribuição), gestores e contagem por departamento. */
+const DEPENDENTES_USUARIO = [cadastrosKeys.usuarios, cadastrosKeys.tecnicos, cadastrosKeys.departamentos];
+
 export const useCreateUsuario = () =>
-  useApiMutation({ mutationFn: (i: UsuarioInput) => usuariosService.create(i), invalidate: [cadastrosKeys.usuarios], successMessage: 'Usuário cadastrado com sucesso.' });
-export const useUpdateUsuario = () =>
+  useApiMutation({ mutationFn: (i: UsuarioInput) => usuariosService.create(i), invalidate: DEPENDENTES_USUARIO, successMessage: 'Usuário cadastrado com sucesso.' });
+export const useUpdateUsuario = (successMessage = 'Usuário atualizado.') =>
   useApiMutation({
-    mutationFn: ({ id, input }: { id: number; input: UsuarioInput }) => usuariosService.update(id, input),
-    invalidate: [cadastrosKeys.usuarios],
-    successMessage: 'Usuário atualizado.',
+    mutationFn: ({ id, input }: { id: number; input: UsuarioUpdate }) => usuariosService.update(id, input),
+    invalidate: DEPENDENTES_USUARIO,
+    successMessage,
   });
 export const useCreateDepartamento = () =>
   useApiMutation({ mutationFn: (i: DepartamentoInput) => departamentosService.create(i), invalidate: [cadastrosKeys.departamentos], successMessage: 'Departamento criado.' });

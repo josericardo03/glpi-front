@@ -1,7 +1,9 @@
+import { isAxiosError } from 'axios';
 import { api } from '@/lib/api';
-import { byId, lookups } from '@/lib/backend/lookups';
+import { byId, currentUserId, lookups } from '@/lib/backend/lookups';
 import type { ApiArtigoKb } from '@/lib/backend/types';
 import { data, matches, request } from '@/lib/http';
+import { queryClient } from '@/lib/query-client';
 import * as db from '@/mocks/db';
 import type { KbArtigo, KbArtigoResumo, KbCategoria } from '@/types';
 
@@ -14,14 +16,27 @@ export interface ArtigosFiltros {
 
 type Voto = NonNullable<KbArtigo['meuVoto']>;
 
-const resumo = ({ conteudoMarkdown, ...a }: KbArtigo): KbArtigoResumo => a;
+const resumo = ({ conteudoMarkdown: _c, ...a }: KbArtigo): KbArtigoResumo => a;
 const ICONES: KbCategoria['icone'][] = ['rede', 'software', 'hardware', 'seguranca', 'rh'];
-const categoriaNome = (id: number) => `Categoria #${id}`;
+/** A API não expõe GET de categorias da base de conhecimento. */
+const categoriaNome = (id: number) => `Categoria ${id}`;
 
-/** A API não expõe os votos do usuário; o voto dado nesta máquina é lembrado localmente. */
-const VOTOS_KEY = 'itsm_kb_votos';
-const lerVotos = (): Record<number, Voto> => JSON.parse(localStorage.getItem(VOTOS_KEY) ?? '{}');
-const salvarVoto = (id: number, voto: Voto) => localStorage.setItem(VOTOS_KEY, JSON.stringify({ ...lerVotos(), [id]: voto }));
+/** A API não devolve o voto do usuário; o voto é lembrado neste navegador, por usuário. */
+const votosKey = () => `itsm_kb_votos_${currentUserId()}`;
+function lerVotos(): Record<number, Voto> {
+  try {
+    return JSON.parse(localStorage.getItem(votosKey()) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+function salvarVoto(id: number, voto: Voto) {
+  try {
+    localStorage.setItem(votosKey(), JSON.stringify({ ...lerVotos(), [id]: voto }));
+  } catch {
+    /* armazenamento indisponível: o voto já foi registrado na API */
+  }
+}
 
 function textoPlano(md: string) {
   return md.replace(/[#>*_`~\-[\]()!]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -54,7 +69,7 @@ async function fetchArtigos(): Promise<KbArtigo[]> {
   });
 }
 
-function filtrar(rows: KbArtigo[], f: ArtigosFiltros) {
+export function filtrarArtigos(rows: KbArtigo[], f: ArtigosFiltros): KbArtigoResumo[] {
   return rows
     .filter((a) => (matches(a.titulo, f.search) || matches(a.resumo, f.search)) && (!f.categoriaId || a.categoriaId === f.categoriaId))
     .sort((a, b) => (f.ordem === 'recentes' ? b.publicadoEm.localeCompare(a.publicadoEm) : b.visualizacoes - a.visualizacoes))
@@ -62,48 +77,60 @@ function filtrar(rows: KbArtigo[], f: ArtigosFiltros) {
     .map(resumo);
 }
 
+/** Derivadas dos artigos publicados (a API não lista categorias da base de conhecimento). */
+export function categoriasDosArtigos(rows: KbArtigo[]): KbCategoria[] {
+  const contagem = new Map<number, number>();
+  rows.forEach((a) => contagem.set(a.categoriaId, (contagem.get(a.categoriaId) ?? 0) + 1));
+  return [...contagem]
+    .sort(([a], [b]) => a - b)
+    .map(([id, totalArtigos], i) => ({ id, nome: categoriaNome(id), descricao: '', icone: ICONES[i % ICONES.length]!, totalArtigos }));
+}
+
+/** GET /artigos-kb compartilhado entre a listagem, as categorias e o artigo aberto. */
+const artigosApi = () => queryClient.fetchQuery({ queryKey: ['kb', 'raw'], queryFn: fetchArtigos, staleTime: 60_000 });
+
 export const kbService = {
-  /** Sem GET de categorias na API: são derivadas dos artigos publicados. */
-  categorias: () =>
-    request<KbCategoria[]>(
+  /** Todos os artigos publicados; filtros, ordenação e categorias são derivados na interface. */
+  artigos: () => request<KbArtigo[]>(artigosApi, () => db.kbArtigos.map((a) => ({ ...a }))),
+
+  categorias: () => request<KbCategoria[]>(async () => categoriasDosArtigos(await artigosApi()), () => db.kbCategorias),
+
+  visualizar: (id: number) =>
+    request<void>(
       async () => {
-        const contagem = new Map<number, number>();
-        (await fetchArtigos()).forEach((a) => contagem.set(a.categoriaId, (contagem.get(a.categoriaId) ?? 0) + 1));
-        return [...contagem].map(([id, totalArtigos], i) => ({ id, nome: categoriaNome(id), descricao: '', icone: ICONES[i % ICONES.length]!, totalArtigos }));
+        await api.post(`/kb/artigos/${id}/visualizar`);
       },
-      () => db.kbCategorias,
+      () => {
+        const a = db.kbArtigos.find((x) => x.id === id);
+        if (a) a.visualizacoes++;
+      },
     ),
 
-  artigos: (f: ArtigosFiltros) => request<KbArtigoResumo[]>(async () => filtrar(await fetchArtigos(), f), () => filtrar(db.kbArtigos, f)),
-
-  artigo: (id: number) =>
-    request<KbArtigo>(
+  /** Retorna `false` quando o usuário já havia votado (HTTP 409). */
+  feedback: (id: number, util: boolean) =>
+    request<boolean>(
       async () => {
-        const [artigos] = await Promise.all([fetchArtigos(), api.post(`/kb/artigos/${id}/visualizar`).catch(() => null)]);
-        const a = artigos.find((x) => x.id === id);
-        if (!a) throw new Error('Artigo não encontrado.');
-        return a;
+        const voto: Voto = util ? 'UTIL' : 'NAO_UTIL';
+        try {
+          await api.post(`/kb/artigos/${id}/feedback`, { util });
+          salvarVoto(id, voto);
+          return true;
+        } catch (err) {
+          if (isAxiosError(err) && err.response?.status === 409) {
+            salvarVoto(id, voto);
+            return false;
+          }
+          throw err;
+        }
       },
       () => {
         const a = db.kbArtigos.find((x) => x.id === id);
         if (!a) throw new Error('Artigo não encontrado (HTTP 404).');
-        a.visualizacoes++;
-        return a;
-      },
-    ),
-
-  feedback: (id: number, util: boolean) =>
-    request<void>(
-      async () => {
-        await api.post(`/kb/artigos/${id}/feedback`, { util });
-        salvarVoto(id, util ? 'UTIL' : 'NAO_UTIL');
-      },
-      () => {
-        const a = db.kbArtigos.find((x) => x.id === id)!;
-        if (a.meuVoto) throw new Error('Você já avaliou este artigo (HTTP 409).');
+        if (a.meuVoto) return false;
         a.meuVoto = util ? 'UTIL' : 'NAO_UTIL';
         if (util) a.votosUteis++;
         else a.votosNaoUteis++;
+        return true;
       },
     ),
 };

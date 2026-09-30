@@ -24,12 +24,18 @@ export function StackedBarChart<T extends Record<string, number | string>>({
   height = 220,
   highlightIndex,
 }: StackedBarChartProps<T>) {
-  const totals = data.map((d) => series.reduce((s, x) => s + Number(d[x.key] ?? 0), 0));
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const totals = data.map((d) => series.reduce((s, x) => s + num(d[x.key]), 0));
   const max = Math.max(1, ...totals);
 
   return (
     <div>
-      <div className="relative flex items-end gap-3 border-b border-brand-border px-2" style={{ height }}>
+      <div
+        role="img"
+        aria-label={data.map((d, i) => `${String(d[labelKey])}: ${totals[i]}`).join('; ')}
+        className="relative flex items-end gap-3 border-b border-brand-border px-2"
+        style={{ height }}
+      >
         <div className="pointer-events-none absolute inset-0 flex flex-col justify-between">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="border-t border-dashed border-slate-100" />
@@ -43,7 +49,7 @@ export function StackedBarChart<T extends Record<string, number | string>>({
             title={series.map((s) => `${s.label}: ${d[s.key]}`).join(' · ')}
           >
             {series.map((s) => (
-              <div key={s.key} className={cn('w-full transition-all', s.className)} style={{ height: `${(Number(d[s.key]) / (totals[i] || 1)) * 100}%` }} />
+              <div key={s.key} className={cn('w-full transition-all', s.className)} style={{ height: `${(num(d[s.key]) / (totals[i] || 1)) * 100}%` }} />
             ))}
           </div>
         ))}
@@ -114,16 +120,16 @@ interface DonutProps {
 
 /** Donut SVG leve para distribuição por status. */
 export function DonutChart({ segments, centerLabel = 'Total', size = 160 }: DonutProps) {
-  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
+  const total = segments.reduce((s, x) => s + (Number.isFinite(x.value) ? x.value : 0), 0);
   const r = 60;
   const c = 2 * Math.PI * r;
   let offset = 0;
   return (
     <div className="flex flex-col items-center gap-5">
       <div className="relative" style={{ width: size, height: size }}>
-        <svg viewBox="0 0 160 160" className="-rotate-90">
+        <svg viewBox="0 0 160 160" className="-rotate-90" role="img" aria-label={segments.map((s) => `${s.label}: ${s.value}`).join('; ')}>
           <circle cx="80" cy="80" r={r} fill="none" stroke="#E2E8F0" strokeWidth="18" />
-          {segments.map((s) => {
+          {total > 0 && segments.map((s) => {
             const len = (s.value / total) * c;
             const el = (
               <circle key={s.label} cx="80" cy="80" r={r} fill="none" stroke={s.color} strokeWidth="18" strokeDasharray={`${len} ${c - len}`} strokeDashoffset={-offset} />
@@ -132,7 +138,7 @@ export function DonutChart({ segments, centerLabel = 'Total', size = 160 }: Donu
             return el;
           })}
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div aria-hidden className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-3xl font-bold text-brand-darker">{formatNumber(total)}</span>
           <span className="text-xs text-brand-muted">{centerLabel}</span>
         </div>

@@ -2,11 +2,14 @@
 
 import { useState, type FormEvent } from 'react';
 import { Clock, Download, FileText, History, Lock, Paperclip, UserRound } from 'lucide-react';
-import { Avatar, Badge, Button, Checkbox, EmptyState, Field, FileDropzone, Input, Textarea, useToast } from '@/components/ui';
+import { Avatar, Badge, Button, Callout, Checkbox, EmptyState, Field, FileDropzone, Input, Textarea, useToast } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
+import { downloadBlob } from '@/lib/csv';
+import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDateTime, formatMinutes, timeAgo } from '@/lib/format';
+import { formatBytes, formatDateTime, formatMinutes, plural, timeAgo } from '@/lib/format';
 import type { Anexo, ChamadoDetalhe } from '@/types';
+import { useAuth } from '@/features/auth/auth-provider';
 import { useComentar, useUploadAnexo, useWorklog } from '../hooks/use-chamados';
 import { chamadosService } from '../services/chamados.service';
 
@@ -14,11 +17,21 @@ export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
   const [texto, setTexto] = useState('');
   const [interno, setInterno] = useState(false);
   const comentar = useComentar(chamado.id);
+  const { hasRole } = useAuth();
+  const podeNotaInterna = hasRole('TECNICO');
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!texto.trim()) return;
-    comentar.mutate({ conteudo: texto.trim(), interno }, { onSuccess: () => { setTexto(''); setInterno(false); } });
+    comentar.mutate(
+      { conteudo: texto.trim(), interno: podeNotaInterna && interno },
+      {
+        onSuccess: () => {
+          setTexto('');
+          setInterno(false);
+        },
+      },
+    );
   }
 
   const itens = [...chamado.comentarios].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
@@ -26,13 +39,23 @@ export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
   return (
     <div className="space-y-6">
       <form onSubmit={onSubmit} className="flex gap-3">
-        <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-brand-muted sm:flex">
+        <span aria-hidden className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-brand-muted sm:flex">
           <UserRound className="h-5 w-5" />
         </span>
         <div className="flex-1">
-          <Textarea placeholder="Digite um novo comentário ou nota técnica..." value={texto} onChange={(e) => setTexto(e.target.value)} className={cn(interno && 'border-amber-300 bg-amber-50/40')} />
+          <Textarea
+            aria-label="Novo comentário"
+            placeholder={podeNotaInterna ? 'Digite um novo comentário ou nota técnica...' : 'Digite um novo comentário...'}
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            className={cn(interno && 'border-amber-300 bg-amber-50/40')}
+          />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <Checkbox label="Visível apenas internamente (Nota Técnica)" checked={interno} onChange={(e) => setInterno(e.target.checked)} className="text-brand-muted" />
+            {podeNotaInterna ? (
+              <Checkbox label="Visível apenas internamente (Nota Técnica)" checked={interno} onChange={(e) => setInterno(e.target.checked)} className="text-brand-muted" />
+            ) : (
+              <span />
+            )}
             <Button type="submit" variant="dark" loading={comentar.isPending} disabled={!texto.trim()}>
               Enviar Comentário
             </Button>
@@ -48,7 +71,7 @@ export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
             <div className={cn('flex-1 rounded-lg border p-4', c.interno ? 'border-amber-200 bg-amber-50/60' : 'border-brand-border bg-white')}>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="font-semibold text-brand-darker">
-                  {c.autorNome} <span className="text-xs font-normal text-brand-muted">({c.autorPapel})</span>
+                  {c.autorNome} {c.autorPapel && <span className="text-xs font-normal text-brand-muted">({c.autorPapel})</span>}
                 </p>
                 <span className="text-xs text-brand-muted" title={formatDateTime(c.criadoEm)}>
                   {timeAgo(c.criadoEm)}
@@ -74,27 +97,37 @@ export function WorklogsTab({ chamado }: { chamado: ChamadoDetalhe }) {
   const worklog = useWorklog(chamado.id);
   const total = chamado.worklogs.reduce((s, w) => s + w.minutos, 0);
 
+  const m = Number(minutos);
+  const valido = descricao.trim().length >= 3 && Number.isInteger(m) && m >= 1 && m <= 1440;
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const m = Number(minutos);
-    if (!descricao.trim() || !m || m <= 0) return;
+    if (!valido) return;
     worklog.mutate({ descricao: descricao.trim(), minutos: m }, { onSuccess: () => setDescricao('') });
   }
 
   return (
     <div className="space-y-6">
-      <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-[1fr_120px_auto] sm:items-end">
-        <Field label="Atividade realizada">{(id) => <Input id={id} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Análise de logs do servidor" />}</Field>
-        <Field label="Minutos">{(id) => <Input id={id} type="number" min={1} value={minutos} onChange={(e) => setMinutos(e.target.value)} />}</Field>
-        <Button type="submit" variant="dark" loading={worklog.isPending}>
+      <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-[1fr_120px_auto] sm:items-start">
+        <Field label="Atividade realizada" hint="Mínimo de 3 caracteres.">
+          {(id) => <Input id={id} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex: Análise de logs do servidor" />}
+        </Field>
+        <Field label="Minutos" hint="1 a 1440.">
+          {(id) => <Input id={id} type="number" min={1} max={1440} step={1} value={minutos} onChange={(e) => setMinutos(e.target.value)} />}
+        </Field>
+        <Button type="submit" variant="dark" className="sm:mt-6" loading={worklog.isPending} disabled={!valido}>
           Registrar
         </Button>
       </form>
-      <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3 text-sm">
-        <span className="text-brand-muted">Tempo total apontado</span>
-        <strong className="text-brand-darker">{formatMinutes(total)}</strong>
-      </div>
-      {chamado.worklogs.length === 0 ? (
+      {!recursos.historicoAtendimento ? (
+        <Callout tone="info">O apontamento é registrado normalmente, mas a API ainda não disponibiliza a listagem dos worklogs deste chamado.</Callout>
+      ) : (
+        <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3 text-sm">
+          <span className="text-brand-muted">Tempo total apontado</span>
+          <strong className="text-brand-darker">{formatMinutes(total)}</strong>
+        </div>
+      )}
+      {!recursos.historicoAtendimento ? null : chamado.worklogs.length === 0 ? (
         <EmptyState icon={<Clock className="h-8 w-8" />} title="Nenhum worklog registrado" />
       ) : (
         <ul className="divide-y divide-brand-border">
@@ -122,17 +155,14 @@ export function AnexosTab({ chamado }: { chamado: ChamadoDetalhe }) {
   const [baixando, setBaixando] = useState<number | null>(null);
 
   async function enviar() {
-    await Promise.all(files.map((f) => upload.mutateAsync(f)));
-    setFiles([]);
+    const r = await Promise.allSettled(files.map((f) => upload.mutateAsync(f)));
+    setFiles(files.filter((_, i) => r[i]!.status === 'rejected'));
   }
 
   async function baixar(anexo: Anexo) {
     setBaixando(anexo.id);
     try {
-      const url = URL.createObjectURL(await chamadosService.baixarAnexo(anexo));
-      const link = Object.assign(document.createElement('a'), { href: url, download: anexo.nomeArquivo });
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(await chamadosService.baixarAnexo(anexo), anexo.nomeArquivo);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -145,7 +175,7 @@ export function AnexosTab({ chamado }: { chamado: ChamadoDetalhe }) {
       <FileDropzone files={files} onChange={setFiles} onError={toast.error} />
       {files.length > 0 && (
         <Button onClick={enviar} loading={upload.isPending} icon={<Paperclip className="h-4 w-4" />}>
-          Enviar {files.length} arquivo(s)
+          Enviar {plural(files.length, 'arquivo', 'arquivos')}
         </Button>
       )}
       <ul className="divide-y divide-brand-border">

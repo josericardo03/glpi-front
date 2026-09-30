@@ -6,13 +6,18 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={cn('animate-pulse rounded bg-slate-200/80', className)} />;
 }
 
-export function Spinner({ className }: { className?: string }) {
-  return <Loader2 className={cn('h-5 w-5 animate-spin text-brand-primary', className)} />;
+export function Spinner({ className, label = 'Carregando' }: { className?: string; label?: string }) {
+  return (
+    <span role="status" className="inline-flex">
+      <Loader2 aria-hidden className={cn('h-5 w-5 animate-spin text-brand-primary', className)} />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
 }
 
 export function PageLoader() {
   return (
-    <div className="flex h-64 items-center justify-center">
+    <div className="flex h-64 items-center justify-center" aria-busy="true">
       <Spinner className="h-7 w-7" />
     </div>
   );
@@ -52,14 +57,17 @@ interface CalloutProps {
   icon?: ReactNode;
   action?: ReactNode;
   className?: string;
+  role?: 'alert' | 'status';
 }
 
-export function Callout({ tone = 'info', title, children, icon, action, className }: CalloutProps) {
+export function Callout({ tone = 'info', title, children, icon, action, className, role }: CalloutProps) {
   const cfg = CALLOUT[tone];
   const Icon = cfg.icon;
   return (
-    <div className={cn('flex gap-3 rounded-lg border p-4', cfg.cls, className)}>
-      <span className={cn('mt-0.5 shrink-0', cfg.iconCls)}>{icon ?? <Icon className="h-5 w-5" />}</span>
+    <div role={role} className={cn('flex gap-3 rounded-lg border p-4', cfg.cls, className)}>
+      <span aria-hidden className={cn('mt-0.5 shrink-0', cfg.iconCls)}>
+        {icon ?? <Icon className="h-5 w-5" />}
+      </span>
       <div className="min-w-0 flex-1 text-sm">
         {title && <p className={cn('font-semibold', tone === 'dark' && 'text-white')}>{title}</p>}
         {children && <div className="mt-0.5 opacity-90">{children}</div>}
@@ -73,10 +81,11 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   return (
     <Callout
       tone="danger"
+      role="alert"
       title="Não foi possível carregar os dados"
       action={
         onRetry && (
-          <button onClick={onRetry} className="text-sm font-semibold text-red-700 underline">
+          <button type="button" onClick={onRetry} className="text-sm font-semibold text-red-700 underline">
             Tentar novamente
           </button>
         )

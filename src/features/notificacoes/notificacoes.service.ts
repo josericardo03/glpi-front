@@ -13,15 +13,21 @@ function inferirTipo(texto: string): TipoNotificacao {
   return 'SISTEMA';
 }
 
+function inferirLink(tipo: TipoNotificacao, texto: string) {
+  if (tipo === 'APROVACAO') return '/aprovacoes';
+  const chamado = texto.match(/#(\d+)/)?.[1];
+  return chamado && tipo !== 'SISTEMA' ? `/chamados/${chamado}` : null;
+}
+
 function toNotificacao(n: ApiNotificacao): Notificacao {
   const texto = `${n.titulo} ${n.mensagem}`;
-  const chamado = texto.match(/#(\d+)/)?.[1];
+  const tipo = inferirTipo(texto);
   return {
     id: n.id,
-    tipo: inferirTipo(texto),
+    tipo,
     titulo: n.titulo,
     mensagem: n.mensagem,
-    link: chamado ? `/chamados/${chamado}` : null,
+    link: inferirLink(tipo, texto),
     urgente: /urgente|cr[ií]tic|sla (vencido|violado)/i.test(texto),
     lida: n.lida,
     criadaEm: n.data_criacao,
@@ -31,7 +37,8 @@ function toNotificacao(n: ApiNotificacao): Notificacao {
 export const notificacoesService = {
   list: () =>
     request<Notificacao[]>(
-      async () => (await data(api.get<ApiNotificacao[]>('/notificacoes'))).map(toNotificacao),
+      async () =>
+        (await data(api.get<ApiNotificacao[]>('/notificacoes'))).map(toNotificacao).sort((a, b) => b.criadaEm.localeCompare(a.criadaEm)),
       () => [...db.notificacoes].sort((a, b) => b.criadaEm.localeCompare(a.criadaEm)),
     ),
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Download, FileSearch, Lock, Monitor } from 'lucide-react';
 import {
   Badge,
@@ -22,7 +22,9 @@ import { useDebounce, useFilters } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
 import { exportCsv } from '@/lib/csv';
 import { formatDateTime } from '@/lib/format';
+import { paginate } from '@/lib/http';
 import type { AcaoAuditoria, AuditLog, AuditoriaFiltros } from '@/types';
+import { filtrarAuditoria } from '../admin.service';
 import { useAuditoria } from '../use-admin';
 
 const ACOES: Record<AcaoAuditoria, { label: string; tone: BadgeTone }> = {
@@ -97,13 +99,16 @@ export function AuditoriaView() {
   const { filters, setFilter } = useFilters(INITIAL);
   const [term, setTerm] = useState('');
   const search = useDebounce(term);
-  const { data, isLoading, isError, error, refetch } = useAuditoria(filters);
+  const { data, isLoading, isError, error, refetch } = useAuditoria();
   const [detalhe, setDetalhe] = useState<AuditLog | null>(null);
 
   useEffect(() => setFilter('search', search), [search, setFilter]);
 
+  const filtrados = useMemo(() => filtrarAuditoria(data ?? [], { search: filters.search, acao: filters.acao }), [data, filters.search, filters.acao]);
+  const pagina = paginate(filtrados, filters.page, filters.pageSize);
+
   function onExport() {
-    exportCsv(`auditoria-${new Date().toISOString().slice(0, 10)}`, data?.data ?? [], [
+    exportCsv(`auditoria-${new Date().toISOString().slice(0, 10)}`, filtrados, [
       { header: 'Data/Hora', value: (l) => formatDateTime(l.criadoEm) },
       { header: 'Usuário', value: (l) => l.usuarioNome },
       { header: 'Ação', value: (l) => l.acaoDetalhe ?? ACOES[l.acao].label },
@@ -121,13 +126,17 @@ export function AuditoriaView() {
         title="Trilha de Auditoria"
         description="Registro imutável de todas as operações sensíveis, com o delta dos dados antes e depois de cada alteração."
         breadcrumbs={[{ label: 'Administração' }, { label: 'Auditoria' }]}
-        actions={<Button variant="outline" icon={<Download className="h-4 w-4" />} disabled={!data?.data.length} onClick={onExport}>Exportar CSV</Button>}
+        actions={
+          <Button variant="outline" icon={<Download className="h-4 w-4" />} disabled={!filtrados.length} onClick={onExport}>
+            Exportar CSV
+          </Button>
+        }
       />
 
-      <Tabs variant="pills" value={filters.acao ?? ''} onChange={(v) => setFilter('acao', v)} items={TAB_ITEMS} className="mb-4 border border-brand-border" />
+      <Tabs variant="pills" aria-label="Filtrar por tipo de ação" value={filters.acao ?? ''} onChange={(v) => setFilter('acao', v)} items={TAB_ITEMS} className="mb-4 border border-brand-border" />
 
       <FilterBar>
-        <SearchInput placeholder="Buscar por usuário, entidade ou ID do registro..." value={term} onChange={(e) => setTerm(e.target.value)} />
+        <SearchInput aria-label="Buscar eventos" placeholder="Buscar por usuário, entidade, ação ou ID do registro..." value={term} onChange={(e) => setTerm(e.target.value)} />
       </FilterBar>
 
       {isError ? (
@@ -135,12 +144,13 @@ export function AuditoriaView() {
       ) : (
         <DataTable
           columns={columns}
-          data={data?.data}
+          data={data ? pagina.data : undefined}
           loading={isLoading}
+          caption="Eventos de auditoria"
           rowKey={(l) => l.id}
           onRowClick={setDetalhe}
           emptyMessage="Nenhum evento encontrado para os filtros aplicados."
-          footer={data && <Pagination page={filters.page!} pageSize={filters.pageSize!} total={data.total} onPageChange={(p) => setFilter('page', p)} label="eventos" />}
+          footer={data && <Pagination page={pagina.page} pageSize={filters.pageSize!} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="eventos" />}
         />
       )}
 
@@ -174,7 +184,11 @@ export function AuditoriaView() {
               <div className="overflow-hidden rounded-md border border-brand-border">
                 <table className="w-full text-xs">
                   <thead className="bg-brand-dark text-left text-[11px] uppercase tracking-wide text-white">
-                    <tr><th className="px-3 py-2">Campo</th><th className="px-3 py-2">Antes</th><th className="px-3 py-2">Depois</th></tr>
+                    <tr>
+                      <th scope="col" className="px-3 py-2">Campo</th>
+                      <th scope="col" className="px-3 py-2">Antes</th>
+                      <th scope="col" className="px-3 py-2">Depois</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-brand-border font-mono">
                     {diffKeys(detalhe).map((k) => (

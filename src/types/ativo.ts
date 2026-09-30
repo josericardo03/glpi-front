@@ -1,7 +1,7 @@
 import type { ID, PageParams } from './common';
 import type { StatusChamado } from './chamado';
 
-export type TipoAtivo = 'NOTEBOOK' | 'SERVIDOR' | 'LICENCA' | 'REDE' | 'OUTRO';
+export type TipoAtivo = 'NOTEBOOK' | 'SERVIDOR' | 'LICENCA' | 'ROTEADOR' | 'SWITCH' | 'OUTRO';
 export type StatusAtivo = 'EM_USO' | 'ESTOQUE' | 'MANUTENCAO' | 'DESCARTADO';
 
 /** Tabela `ativos_cmdb`. Campos `null` não são expostos pela API atual. */

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Download, PlusCircle, Wrench } from 'lucide-react';
 import {
   Button,
@@ -25,8 +25,11 @@ import { useDebounce, useFilters } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
 import { exportCsv } from '@/lib/csv';
 import { formatDate, formatPercent } from '@/lib/format';
+import { paginate } from '@/lib/http';
+import { textoInvalido } from '@/lib/validation';
 import type { Ativo, AtivoFiltros, AtivoInput, StatusAtivo, TipoAtivo } from '@/types';
 import { useUsuarioOptions } from '@/features/cadastros/use-cadastros';
+import { filtrarAtivos, resumirAtivos } from '../ativos.service';
 import { useAtivos, useCreateAtivo } from '../use-ativos';
 import { AtivoIcon, STATUS_ATIVO, STATUS_ATIVO_OPTIONS, StatusAtivoBadge, TIPO_ATIVO, TIPO_OPTIONS } from './ativo-meta';
 
@@ -52,26 +55,47 @@ const columns: Column<Ativo>[] = [
 
 const EMPTY: AtivoInput = { codigo: '', nome: '', tipo: 'NOTEBOOK', status: 'ESTOQUE', responsavelId: null, dataAquisicao: '' };
 const INITIAL: AtivoFiltros = { page: 1, pageSize: 10, search: '', tipo: '', status: '' };
+const TIPO_TABS: { value: TipoAtivo; label: string }[] = [
+  { value: 'NOTEBOOK', label: 'Notebooks' },
+  { value: 'SERVIDOR', label: 'Servidores' },
+  { value: 'LICENCA', label: 'Licenças' },
+  { value: 'ROTEADOR', label: 'Roteadores' },
+  { value: 'SWITCH', label: 'Switches' },
+  { value: 'OUTRO', label: 'Outros' },
+];
+const hoje = () => new Date().toLocaleDateString('en-CA');
 
 export function AtivosView() {
   const router = useRouter();
   const { filters, setFilter } = useFilters(INITIAL);
   const search = useDebounce(filters.search);
-  const { data, isLoading, isError, error, refetch } = useAtivos({ ...filters, search });
+  const { data, isLoading, isError, error, refetch } = useAtivos();
   const create = useCreateAtivo();
   const usuarios = useUsuarioOptions();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<AtivoInput>(EMPTY);
 
-  const r = data?.resumo;
+  const r = useMemo(() => (data ? resumirAtivos(data) : undefined), [data]);
+  const filtrados = useMemo(() => filtrarAtivos(data ?? [], { search, tipo: filters.tipo, status: filters.status }), [data, search, filters.tipo, filters.status]);
+  const pagina = paginate(filtrados, filters.page, filters.pageSize);
   const set = <K extends keyof AtivoInput>(k: K, v: AtivoInput[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  const erros = {
+    codigo: form.codigo ? textoInvalido(form.codigo, { rotulo: 'O código', min: 1, max: 50 }) : undefined,
+    nome: form.nome ? textoInvalido(form.nome, { rotulo: 'O nome', max: 150 }) : undefined,
+    data: form.dataAquisicao && form.dataAquisicao > hoje() ? 'A data de aquisição não pode estar no futuro.' : undefined,
+  };
+  const valid = !textoInvalido(form.codigo, { min: 1, max: 50 }) && !textoInvalido(form.nome, { max: 150 }) && !erros.data;
+
+  function fechar() {
+    setOpen(false);
+    setForm(EMPTY);
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    create.mutate(form, { onSuccess: () => { setOpen(false); setForm(EMPTY); } });
+    if (valid) create.mutate(form, { onSuccess: fechar });
   }
-
-  const valid = form.nome.trim().length >= 2 && form.codigo.trim().length >= 2;
 
   return (
     <>
@@ -83,8 +107,9 @@ export function AtivosView() {
             <Button
               variant="subtle"
               icon={<Download className="h-4 w-4" />}
+              disabled={!filtrados.length}
               onClick={() =>
-                exportCsv('ativos', data?.data ?? [], [
+                exportCsv('ativos', filtrados, [
                   { header: 'Código', value: (a) => a.codigo },
                   { header: 'Nome', value: (a) => a.nome },
                   { header: 'Tipo', value: (a) => TIPO_ATIVO[a.tipo].label },
@@ -107,20 +132,21 @@ export function AtivosView() {
         <div className="flex flex-wrap items-center justify-between gap-3 p-2">
           <Tabs
             variant="pills"
+            aria-label="Filtrar por tipo de ativo"
             value={(filters.tipo || 'TODOS') as TipoAtivo | 'TODOS'}
             onChange={(v) => setFilter('tipo', v === 'TODOS' ? '' : v)}
-            items={[
-              { value: 'TODOS', label: 'Todos', count: r?.total },
-              { value: 'NOTEBOOK', label: 'Notebooks', count: r?.porTipo.NOTEBOOK },
-              { value: 'SERVIDOR', label: 'Servidores', count: r?.porTipo.SERVIDOR },
-              { value: 'LICENCA', label: 'Licenças', count: r?.porTipo.LICENCA },
-              { value: 'REDE', label: 'Rede', count: r?.porTipo.REDE },
-              { value: 'OUTRO', label: 'Outros', count: r?.porTipo.OUTRO },
-            ]}
+            items={[{ value: 'TODOS' as const, label: 'Todos', count: r?.total }, ...TIPO_TABS.map((t) => ({ ...t, count: r?.porTipo[t.value] }))]}
           />
           <div className="flex gap-2 px-2">
-            <SearchInput placeholder="Nome ou código" value={filters.search} onChange={(e) => setFilter('search', e.target.value)} className="w-56" />
-            <Select placeholder="Todos os status" options={STATUS_ATIVO_OPTIONS} value={filters.status} onChange={(e) => setFilter('status', e.target.value as StatusAtivo | '')} className="w-44" />
+            <SearchInput aria-label="Buscar ativos" placeholder="Nome ou código" value={filters.search} onChange={(e) => setFilter('search', e.target.value)} className="w-56" />
+            <Select
+              aria-label="Status do ativo"
+              placeholder="Todos os status"
+              options={STATUS_ATIVO_OPTIONS}
+              value={filters.status}
+              onChange={(e) => setFilter('status', e.target.value as StatusAtivo | '')}
+              className="w-44"
+            />
           </div>
         </div>
       </Card>
@@ -130,11 +156,13 @@ export function AtivosView() {
       ) : (
         <DataTable
           columns={columns}
-          data={data?.data}
+          data={data ? pagina.data : undefined}
           loading={isLoading}
+          caption="Inventário de ativos"
           rowKey={(a) => a.id}
           onRowClick={(a) => router.push(`/ativos/${a.id}`)}
-          footer={data && <Pagination page={filters.page!} pageSize={filters.pageSize!} total={data.total} onPageChange={(p) => setFilter('page', p)} label="ativos" />}
+          emptyMessage="Nenhum ativo encontrado para os filtros aplicados."
+          footer={data && <Pagination page={pagina.page} pageSize={filters.pageSize!} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="ativos" />}
         />
       )}
 
@@ -149,10 +177,10 @@ export function AtivosView() {
         </Card>
         <Card className="border-brand-dark bg-brand-darker text-white">
           <CardBody className="relative overflow-hidden">
-            <Wrench className="absolute -bottom-3 -right-3 h-24 w-24 text-white/5" />
+            <Wrench className="absolute -bottom-3 -right-3 h-24 w-24 text-white/5" aria-hidden />
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Em Manutenção</p>
             <p className="mt-1 text-3xl font-bold">{r?.emManutencao ?? '—'}</p>
-            <button onClick={() => setFilter('status', 'MANUTENCAO')} className="mt-2 text-xs font-bold uppercase tracking-wide text-brand-accent underline">
+            <button type="button" onClick={() => setFilter('status', 'MANUTENCAO')} className="mt-2 text-xs font-bold uppercase tracking-wide text-brand-accent underline">
               Ver ativos
             </button>
           </CardBody>
@@ -161,22 +189,26 @@ export function AtivosView() {
 
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={fechar}
         title="Adicionar Ativo"
         description="Cadastre um novo item de configuração no CMDB."
         size="lg"
         footer={
           <>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button type="submit" form="form-ativo" disabled={!valid} loading={create.isPending}>Salvar Ativo</Button>
+            <Button variant="outline" onClick={fechar}>Cancelar</Button>
+            <Button type="submit" form="form-ativo" disabled={!valid} loading={create.isPending}>
+              Salvar Ativo
+            </Button>
           </>
         }
       >
-        <form id="form-ativo" onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
-          <Field label="Código de Patrimônio" required>
+        <form id="form-ativo" onSubmit={onSubmit} noValidate className="grid gap-4 sm:grid-cols-2">
+          <Field label="Código de Patrimônio" required error={erros.codigo}>
             {(id) => <Input id={id} value={form.codigo} onChange={(e) => set('codigo', e.target.value.toUpperCase())} className="font-mono" placeholder="Ex.: NB-0042" maxLength={50} />}
           </Field>
-          <Field label="Nome" required>{(id) => <Input id={id} value={form.nome} onChange={(e) => set('nome', e.target.value)} maxLength={150} />}</Field>
+          <Field label="Nome" required error={erros.nome}>
+            {(id) => <Input id={id} value={form.nome} onChange={(e) => set('nome', e.target.value)} maxLength={150} />}
+          </Field>
           <Field label="Tipo">{(id) => <Select id={id} options={TIPO_OPTIONS} value={form.tipo} onChange={(e) => set('tipo', e.target.value as TipoAtivo)} />}</Field>
           <Field label="Status">{(id) => <Select id={id} options={STATUS_ATIVO_OPTIONS} value={form.status} onChange={(e) => set('status', e.target.value as StatusAtivo)} />}</Field>
           <Field label="Responsável">
@@ -184,7 +216,9 @@ export function AtivosView() {
               <Select id={id} placeholder="Não atribuído" options={usuarios} value={form.responsavelId ?? ''} onChange={(e) => set('responsavelId', e.target.value ? Number(e.target.value) : null)} />
             )}
           </Field>
-          <Field label="Data de Aquisição">{(id) => <Input id={id} type="date" value={form.dataAquisicao} onChange={(e) => set('dataAquisicao', e.target.value)} />}</Field>
+          <Field label="Data de Aquisição" error={erros.data}>
+            {(id) => <Input id={id} type="date" max={hoje()} value={form.dataAquisicao} onChange={(e) => set('dataAquisicao', e.target.value)} />}
+          </Field>
         </form>
       </Modal>
     </>

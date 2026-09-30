@@ -40,7 +40,7 @@ export const usuarios: Usuario[] = [
 export const departamentos: Departamento[] = [
   { id: 1, sigla: 'TI-CORP', nome: 'Departamento de Tecnologia', descricao: 'Infraestrutura, Redes e Suporte', gestorId: 1, gestorNome: 'Ricardo Andrade', departamentoPaiId: null, totalUsuarios: 42, status: 'ATIVO' },
   { id: 2, sigla: 'RH-ORG', nome: 'Recursos Humanos', descricao: 'Gestão de Pessoas e Talentos', gestorId: 2, gestorNome: 'Mariana Souza', departamentoPaiId: null, totalUsuarios: 12, status: 'ATIVO' },
-  { id: 3, sigla: 'FIN-ADM', nome: 'Financeiro e Administrativo', descricao: 'Contabilidade, Faturamento e Compras', gestorId: 8, gestorNome: 'Marcos Vinícius', departamentoPaiId: null, totalUsuarios: 28, status: 'REVISAO' },
+  { id: 3, sigla: 'FIN-ADM', nome: 'Financeiro e Administrativo', descricao: 'Contabilidade, Faturamento e Compras', gestorId: 8, gestorNome: 'Marcos Vinícius', departamentoPaiId: null, totalUsuarios: 28, status: 'ATIVO' },
   { id: 4, sigla: 'MKT-COM', nome: 'Marketing e Comunicação', descricao: 'Criação, Social Media e Branding', gestorId: 7, gestorNome: 'Juliana Costa', departamentoPaiId: null, totalUsuarios: 8, status: 'ATIVO' },
   { id: 5, sigla: 'TI-SUP', nome: 'Suporte ao Usuário', descricao: 'Service Desk e atendimento N1/N2', gestorId: 5, gestorNome: 'Ana Paula Silva', departamentoPaiId: 1, totalUsuarios: 18, status: 'ATIVO' },
 ];
@@ -187,7 +187,7 @@ export const ativos: AtivoDetalhe[] = [
   ['SW-9901', 'Adobe Creative Cloud', 'LICENCA', 'AD-CC-2024-X-01', 'Ana Paula Silva', 'EM_USO', 'Remoto', 'Adobe', 'Creative Cloud Teams', 100],
   ['ASSET-5512', 'ThinkPad X1 Carbon', 'NOTEBOOK', 'PF-3E9R22', 'Marcos Vinícius', 'EM_USO', 'Filial - RJ', 'Lenovo', 'X1 Carbon Gen 11', 88],
   ['SRV-PROD-SQL-01', 'Servidor SQL Produção', 'SERVIDOR', 'HP-DL380-9921', 'Equipe Infra', 'EM_USO', 'Data Center 01', 'HPE', 'ProLiant DL380', 64],
-  ['NET-0031', 'Switch Core Cisco 9300', 'REDE', 'FOC2231X0AB', 'Equipe Infra', 'EM_USO', 'Data Center 01', 'Cisco', 'Catalyst 9300', 93],
+  ['NET-0031', 'Switch Core Cisco 9300', 'SWITCH', 'FOC2231X0AB', 'Equipe Infra', 'EM_USO', 'Data Center 01', 'Cisco', 'Catalyst 9300', 93],
   ['SW-1002', 'Microsoft 365 E3', 'LICENCA', 'MS-E3-2025-88', 'TI Corporativo', 'EM_USO', 'Nuvem', 'Microsoft', 'M365 E3', 100],
   ['ASSET-6120', 'Dell Latitude 5440', 'NOTEBOOK', 'DL-5440-ZZ1', 'Estoque TI', 'ESTOQUE', 'Sede - São Paulo', 'Dell', 'Latitude 5440', 100],
   ['DSK-0402', 'Desktop OptiPlex 7010', 'OUTRO', 'OPX-7010-332', 'Joana Dark', 'DESCARTADO', 'Sede - São Paulo', 'Dell', 'OptiPlex 7010', 12],
@@ -219,10 +219,10 @@ export const ativos: AtivoDetalhe[] = [
   dependencias:
     tipo === 'SERVIDOR'
       ? [
-          { id: 6, codigo: 'NET-0031', nome: 'Switch Core Cisco 9300', tipo: 'REDE', relacao: 'DEPENDE_DE' },
+          { id: 6, codigo: 'NET-0031', nome: 'Switch Core Cisco 9300', tipo: 'SWITCH', relacao: 'DEPENDE_DE' },
           { id: 7, codigo: 'SW-1002', nome: 'Microsoft 365 E3', tipo: 'LICENCA', relacao: 'SUPORTA' },
         ]
-      : [{ id: 6, codigo: 'NET-0031', nome: 'Switch Core Cisco 9300', tipo: 'REDE', relacao: 'DEPENDE_DE' }],
+      : [{ id: 6, codigo: 'NET-0031', nome: 'Switch Core Cisco 9300', tipo: 'SWITCH', relacao: 'DEPENDE_DE' }],
   chamadosVinculados: i === 4 ? [{ id: 10240, titulo: 'Falha Crítica no Banco de Dados de Produção', status: 'EM_ATENDIMENTO' }] : [],
 }));
 

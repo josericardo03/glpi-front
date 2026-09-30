@@ -1,16 +1,17 @@
-import { AlertCircle, ChevronDown, ChevronUp, ChevronsUp, Minus, PauseCircle } from 'lucide-react';
+import { AlertCircle, ChevronUp, ChevronsUp, Minus, PauseCircle } from 'lucide-react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { formatMinutes } from '@/lib/format';
-import type { MotivoPausa, Prioridade, StatusChamado } from '@/types';
+import type { Chamado, MotivoPausa, Prioridade, StatusChamado } from '@/types';
+import { STATUS_LABEL } from '../utils/transicoes';
 
 export const STATUS_META: Record<StatusChamado, { label: string; tone: BadgeTone; color: string }> = {
-  NOVO: { label: 'Novo', tone: 'novo', color: '#3B82F6' },
-  EM_ATENDIMENTO: { label: 'Em Atendimento', tone: 'atendimento', color: '#8B5CF6' },
-  PENDENTE: { label: 'Pendente', tone: 'pendente', color: '#F59E0B' },
-  RESOLVIDO: { label: 'Resolvido', tone: 'resolvido', color: '#10B981' },
-  CONCLUIDO: { label: 'Concluído', tone: 'concluido', color: '#059669' },
+  NOVO: { label: STATUS_LABEL.NOVO, tone: 'novo', color: '#3B82F6' },
+  EM_ATENDIMENTO: { label: STATUS_LABEL.EM_ATENDIMENTO, tone: 'atendimento', color: '#8B5CF6' },
+  PENDENTE: { label: STATUS_LABEL.PENDENTE, tone: 'pendente', color: '#F59E0B' },
+  RESOLVIDO: { label: STATUS_LABEL.RESOLVIDO, tone: 'resolvido', color: '#10B981' },
+  CONCLUIDO: { label: STATUS_LABEL.CONCLUIDO, tone: 'concluido', color: '#059669' },
 };
 
 export const PRIORIDADE_META: Record<Prioridade, { label: string; tone: BadgeTone; icon: typeof AlertCircle; text: string }> = {
@@ -22,14 +23,7 @@ export const PRIORIDADE_META: Record<Prioridade, { label: string; tone: BadgeTon
 
 export const STATUS_OPTIONS = (Object.keys(STATUS_META) as StatusChamado[]).map((s) => ({ value: s, label: STATUS_META[s].label }));
 
-/** Máquina de estados do backend (`assertTransicao`). */
-export const TRANSICOES: Record<StatusChamado, StatusChamado[]> = {
-  NOVO: ['EM_ATENDIMENTO', 'PENDENTE'],
-  EM_ATENDIMENTO: ['PENDENTE', 'RESOLVIDO'],
-  PENDENTE: ['EM_ATENDIMENTO'],
-  RESOLVIDO: ['CONCLUIDO'],
-  CONCLUIDO: [],
-};
+export { isFinalizado, TRANSICOES, transicoesComuns } from '../utils/transicoes';
 
 export const MOTIVOS_PAUSA: { value: MotivoPausa; label: string }[] = [
   { value: 'AGUARDANDO_SOLICITANTE', label: 'Aguardando solicitante' },
@@ -54,11 +48,13 @@ export function PriorityBadge({ prioridade, variant = 'badge' }: { prioridade: P
   const Icon = m.icon;
   return (
     <span className={cn('inline-flex items-center gap-1 text-xs font-bold uppercase', m.text)}>
-      <Icon className="h-3.5 w-3.5" />
+      <Icon aria-hidden className="h-3.5 w-3.5" />
       {m.label}
     </span>
   );
 }
+
+export const slaVencido = (c: Pick<Chamado, 'slaRestanteMin'>) => c.slaRestanteMin !== null && c.slaRestanteMin < 0;
 
 export function slaState(restanteMin: number, totalMin: number) {
   if (restanteMin < 0) return { label: 'SLA vencido', tone: 'danger' as const, text: 'text-status-critica' };
@@ -67,8 +63,8 @@ export function slaState(restanteMin: number, totalMin: number) {
 }
 
 interface SlaIndicatorProps {
-  restanteMin: number;
-  totalMin: number;
+  restanteMin: number | null;
+  totalMin: number | null;
   pausado?: boolean;
   compact?: boolean;
 }
@@ -78,25 +74,22 @@ export function SlaIndicator({ restanteMin, totalMin, pausado, compact }: SlaInd
   if (pausado) {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-semibold text-status-pendente">
-        <PauseCircle className="h-4 w-4" /> SLA pausado
+        <PauseCircle aria-hidden className="h-4 w-4" /> SLA pausado
       </span>
     );
   }
+  if (restanteMin === null || totalMin === null) return <span className="text-xs text-brand-muted">Sem SLA</span>;
   const s = slaState(restanteMin, totalMin);
   const consumido = Math.min(totalMin, totalMin - restanteMin);
-  if (compact) return <span className={cn('font-mono text-sm font-semibold', s.text)}>{formatMinutes(restanteMin)}</span>;
+  const tempo = restanteMin < 0 ? `há ${formatMinutes(-restanteMin)}` : formatMinutes(restanteMin);
+  if (compact) return <span className={cn('font-mono text-sm font-semibold', s.text)}>{tempo}</span>;
   return (
     <div className="w-40">
       <div className="flex items-center justify-between gap-2">
         <Progress value={consumido} max={totalMin} tone={s.tone} size="sm" className="flex-1" />
-        <span className={cn('shrink-0 font-mono text-xs font-bold', s.text)}>{formatMinutes(restanteMin)}</span>
+        <span className={cn('shrink-0 font-mono text-xs font-bold', s.text)}>{tempo}</span>
       </div>
       <p className={cn('mt-1 text-[10px] font-semibold uppercase tracking-wide', s.text)}>{s.label}</p>
     </div>
   );
-}
-
-export function PrioridadeIcon({ prioridade }: { prioridade: Prioridade }) {
-  const Icon = prioridade === 'BAIXA' ? ChevronDown : PRIORIDADE_META[prioridade].icon;
-  return <Icon className={cn('h-4 w-4', PRIORIDADE_META[prioridade].text)} />;
 }

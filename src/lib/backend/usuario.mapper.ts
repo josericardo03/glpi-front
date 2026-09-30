@@ -4,6 +4,8 @@ import type { ApiAuthUser, ApiDepartamento, ApiUsuario, PerfilApi } from './type
 /** Hierarquia do backend (roles.ts): um perfil inclui as permissões dos perfis abaixo dele. */
 export const PERFIL_RANK: Record<Papel, number> = { SOLICITANTE: 1, TECNICO: 2, GESTOR: 3, ADMIN: 4 };
 
+export const PAPEL_LABEL: Record<Papel, string> = { ADMIN: 'Administrador', GESTOR: 'Gestor', TECNICO: 'Técnico', SOLICITANTE: 'Solicitante' };
+
 export const perfilPrincipal = (papeis: Papel[]): Papel =>
   papeis.reduce<Papel>((a, b) => (PERFIL_RANK[b] > PERFIL_RANK[a] ? b : a), 'SOLICITANTE');
 
@@ -35,7 +37,7 @@ export function authUserToUsuario(u: ApiAuthUser): Usuario {
     papeis: [u.perfil as PerfilApi],
     status: u.status as StatusUsuario,
     avatarUrl: null,
-    ultimoAcesso: new Date().toISOString(),
-    criadoEm: new Date().toISOString(),
+    ultimoAcesso: null,
+    criadoEm: null,
   };
 }

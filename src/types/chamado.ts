@@ -27,10 +27,11 @@ export interface Chamado {
   tecnicoNome: string | null;
   abertoEm: string;
   atualizadoEm: string;
-  prazoSla: string;
+  /** Campos de SLA ficam `null` quando nenhuma política foi aplicada ao chamado. */
+  prazoSla: string | null;
   /** Minutos restantes para o vencimento do SLA (negativo = vencido). */
-  slaRestanteMin: number;
-  slaTotalMin: number;
+  slaRestanteMin: number | null;
+  slaTotalMin: number | null;
   slaPausado: boolean;
   itensConfiguracao?: { id: ID; nome: string; detalhe: string }[];
 }
@@ -130,6 +131,7 @@ export interface Tecnico {
   id: ID;
   nome: string;
   nivel: string;
-  grupoId: ID;
+  /** `null` quando a API não informa a equipe do técnico. */
+  grupoId: ID | null;
   avatarUrl?: string | null;
 }

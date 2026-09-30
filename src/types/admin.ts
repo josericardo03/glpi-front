@@ -34,7 +34,7 @@ export interface Branding {
   corFundo: string;
 }
 
-export type TipoIntegracao = 'LDAP' | 'SMTP' | 'WEBHOOK';
+export type TipoIntegracao = 'LDAP' | 'AD' | 'SMTP' | 'WEBHOOK';
 
 /** Tabela `integracoes` */
 export interface Integracao {

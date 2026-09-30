@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { ArrowRight, BadgeCheck, Eye, Laptop, Network, Search, ShieldCheck, TerminalSquare, TrendingUp, UserRoundCheck, X, type LucideIcon } from 'lucide-react';
-import { Badge, Button, buttonVariants, Card, CardBody, EmptyState, Skeleton } from '@/components/ui';
+import { Badge, Button, buttonVariants, Card, CardBody, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { getErrorMessage } from '@/lib/api';
 import { formatNumber, timeAgo } from '@/lib/format';
 import type { KbArtigoResumo, KbCategoria } from '@/types';
 import { useKbArtigos, useKbCategorias } from '../use-kb';
@@ -25,7 +26,9 @@ function ArtigoItem({ a, index }: { a: KbArtigoResumo; index?: number }) {
         <p className="mt-0.5 truncate text-sm text-brand-muted">{a.resumo}</p>
         <div className="mt-2 flex items-center gap-3 text-xs text-brand-muted">
           <Badge tone="dark">{a.categoriaNome}</Badge>
-          <span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> {formatNumber(a.visualizacoes)} visualizações</span>
+          <span className="flex items-center gap-1">
+            <Eye className="h-3.5 w-3.5" aria-hidden /> {formatNumber(a.visualizacoes)} {a.visualizacoes === 1 ? 'visualização' : 'visualizações'}
+          </span>
         </div>
       </div>
     </Link>
@@ -42,6 +45,7 @@ export function KbHomeView() {
   const populares = useKbArtigos({ ordem: 'populares', limit: 3 });
   const recentes = useKbArtigos({ ordem: 'recentes', limit: 3 });
   const resultados = useKbArtigos({ search, categoriaId });
+  const semArtigos = !populares.isLoading && !populares.isError && populares.data?.length === 0;
 
   function onSearch(e: FormEvent) {
     e.preventDefault();
@@ -61,9 +65,12 @@ export function KbHomeView() {
         <p className="mx-auto mt-2 max-w-xl text-sm text-slate-400">
           Busque em nossa base de conhecimento por guias passo a passo, soluções de problemas conhecidos e políticas da empresa.
         </p>
-        <form onSubmit={onSearch} className="mx-auto mt-8 flex max-w-2xl items-center gap-2 rounded-lg bg-white p-2 shadow-pop">
-          <Search className="ml-2 h-5 w-5 text-brand-muted" />
+        <form role="search" onSubmit={onSearch} className="mx-auto mt-8 flex max-w-2xl items-center gap-2 rounded-lg bg-white p-2 shadow-pop">
+          <Search className="ml-2 h-5 w-5 text-brand-muted" aria-hidden />
           <input
+            type="search"
+            aria-label="Pesquisar na base de conhecimento"
+            maxLength={100}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Pesquisar por erro, software, configuração de rede..."
@@ -73,22 +80,24 @@ export function KbHomeView() {
         </form>
       </section>
 
+      {populares.isError && <ErrorState message={getErrorMessage(populares.error)} onRetry={populares.refetch} />}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         {categorias.isLoading && Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-40" />)}
         {categorias.data?.map((c) => {
-          const Icon = ICONES[c.icone];
+          const Icon = ICONES[c.icone] ?? TerminalSquare;
           const active = categoriaId === c.id;
           return (
-            <button key={c.id} onClick={() => setCategoriaId(active ? undefined : c.id)} className="text-left">
+            <button key={c.id} type="button" aria-pressed={active} onClick={() => setCategoriaId(active ? undefined : c.id)} className="rounded-xl text-left">
               <Card className={`h-full transition hover:-translate-y-0.5 hover:shadow-md ${active ? 'ring-2 ring-brand-primary' : ''}`}>
                 <CardBody>
-                  <span className="flex h-10 w-10 items-center justify-center rounded-md bg-brand-darker text-white">
+                  <span aria-hidden className="flex h-10 w-10 items-center justify-center rounded-md bg-brand-darker text-white">
                     <Icon className="h-5 w-5" />
                   </span>
                   <p className="mt-4 font-semibold text-brand-darker">{c.nome}</p>
-                  <p className="mt-1 line-clamp-3 text-xs text-brand-muted">{c.descricao}</p>
+                  {c.descricao && <p className="mt-1 line-clamp-3 text-xs text-brand-muted">{c.descricao}</p>}
                   <p className="mt-3 flex items-center gap-1 text-sm font-medium text-brand-primary">
-                    Ver {c.totalArtigos} artigos <ArrowRight className="h-3.5 w-3.5" />
+                    Ver {c.totalArtigos} {c.totalArtigos === 1 ? 'artigo' : 'artigos'} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                   </p>
                 </CardBody>
               </Card>
@@ -97,11 +106,16 @@ export function KbHomeView() {
         })}
       </div>
 
-      {filtrando ? (
+      {semArtigos ? (
+        <Card className="mt-10">
+          <EmptyState title="Nenhum artigo publicado" description="A base de conhecimento ainda não possui artigos publicados." />
+        </Card>
+      ) : filtrando ? (
         <section className="mt-10">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-brand-darker">
-              {resultados.data?.length ?? 0} resultado(s){search && <> para “{search}”</>}
+            <h2 className="text-lg font-semibold text-brand-darker" aria-live="polite">
+              {resultados.data?.length ?? 0} {resultados.data?.length === 1 ? 'resultado' : 'resultados'}
+              {search && <> para “{search}”</>}
             </h2>
             <Button variant="ghost" size="sm" icon={<X className="h-4 w-4" />} onClick={limpar}>
               Limpar busca
@@ -116,7 +130,7 @@ export function KbHomeView() {
         <div className="mt-10 grid gap-8 lg:grid-cols-2">
           <section>
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-brand-darker">
-              <TrendingUp className="h-5 w-5" /> Artigos Mais Lidos
+              <TrendingUp className="h-5 w-5" aria-hidden /> Artigos Mais Lidos
             </h2>
             <div className="space-y-3">
               {populares.isLoading && <Skeleton className="h-64" />}
@@ -125,7 +139,7 @@ export function KbHomeView() {
           </section>
           <section>
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-brand-darker">
-              <BadgeCheck className="h-5 w-5" /> Adicionados Recentemente
+              <BadgeCheck className="h-5 w-5" aria-hidden /> Adicionados Recentemente
             </h2>
             <div className="space-y-3">
               {recentes.isLoading && <Skeleton className="h-64" />}

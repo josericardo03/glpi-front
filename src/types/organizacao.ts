@@ -5,18 +5,18 @@ export interface Departamento {
   id: ID;
   sigla: string;
   nome: string;
-  descricao: string;
+  /** Não existe na API; presente apenas nos dados de demonstração. */
+  descricao?: string;
   gestorId: ID | null;
   gestorNome: string | null;
   departamentoPaiId: ID | null;
   totalUsuarios: number;
-  status: 'ATIVO' | 'REVISAO' | 'INATIVO';
+  status: AtivoInativo;
 }
 
 export interface DepartamentoInput {
   sigla: string;
   nome: string;
-  descricao: string;
   gestorId: ID | null;
   departamentoPaiId: ID | null;
 }
@@ -70,5 +70,6 @@ export interface GrupoInput {
 export interface MembroInput {
   grupoId: ID;
   usuarioId: ID;
-  cargaTrabalho: number;
+  /** Cargo/especialidade do técnico dentro da equipe (opcional). */
+  especialidade?: string;
 }

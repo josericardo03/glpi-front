@@ -11,7 +11,8 @@ export interface Aprovacao {
   mudancaId: ID | null;
   solicitanteNome: string;
   prioridade: Prioridade;
-  risco: 'BAIXO' | 'MEDIO' | 'ALTO';
+  /** `null` quando a API não informa o risco. */
+  risco: 'BAIXO' | 'MEDIO' | 'ALTO' | null;
   custoEstimado: number | null;
   solicitadoEm: string;
   status: 'PENDENTE' | 'APROVADA' | 'REJEITADA';

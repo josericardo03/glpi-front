@@ -19,19 +19,23 @@ export function PageHeader({ title, description, breadcrumbs, actions }: PageHea
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         {breadcrumbs && (
-          <nav aria-label="Breadcrumb" className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
-            {breadcrumbs.map((c, i) => (
-              <span key={c.label} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="h-3 w-3" />}
-                {c.href ? (
-                  <Link href={c.href} className="hover:text-brand-primary">
-                    {c.label}
-                  </Link>
-                ) : (
-                  <span className="text-brand-darker">{c.label}</span>
-                )}
-              </span>
-            ))}
+          <nav aria-label="Trilha de navegação" className="mb-1.5">
+            <ol className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
+              {breadcrumbs.map((c, i) => (
+                <li key={`${c.label}-${i}`} className="flex items-center gap-1">
+                  {i > 0 && <ChevronRight aria-hidden className="h-3 w-3" />}
+                  {c.href ? (
+                    <Link href={c.href} className="hover:text-brand-primary">
+                      {c.label}
+                    </Link>
+                  ) : (
+                    <span className="text-brand-darker" aria-current={i === breadcrumbs.length - 1 ? 'page' : undefined}>
+                      {c.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
           </nav>
         )}
         <h1 className="text-2xl font-bold tracking-tight text-brand-darker md:text-[28px]">{title}</h1>

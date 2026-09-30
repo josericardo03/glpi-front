@@ -26,7 +26,7 @@ function NotificacaoCard({ n, onLer }: { n: Notificacao; onLer: (id: number) => 
     <Card className={cn('border-l-4 transition-opacity', n.urgente ? 'border-l-status-critica bg-red-50/40' : n.lida ? 'border-l-slate-200 opacity-70' : 'border-l-brand-primary')}>
       <CardBody className="flex gap-4">
         <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-md', n.urgente ? 'bg-red-100 text-status-critica' : n.lida ? 'bg-slate-100 text-brand-muted' : 'bg-brand-darker text-white')}>
-          <Icon className="h-5 w-5" />
+          <Icon aria-hidden className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
@@ -41,7 +41,7 @@ function NotificacaoCard({ n, onLer }: { n: Notificacao; onLer: (id: number) => 
               </Link>
             )}
             {!n.lida ? (
-              <button onClick={() => onLer(n.id)} className="text-xs font-medium text-brand-muted hover:text-brand-primary">
+              <button type="button" onClick={() => onLer(n.id)} className="text-xs font-medium text-brand-muted hover:text-brand-primary">
                 Marcar como lida
               </button>
             ) : (
@@ -97,10 +97,12 @@ export function NotificacoesView() {
                   return (
                     <button
                       key={t}
+                      type="button"
+                      aria-pressed={active}
                       onClick={() => setTipo(t)}
                       className={cn('flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm', active ? 'bg-blue-50 font-semibold text-brand-primary' : 'text-brand-darker hover:bg-slate-50')}
                     >
-                      <Icon className="h-4 w-4" />
+                      <Icon aria-hidden className="h-4 w-4" />
                       <span className="flex-1 text-left">{t === 'TODAS' ? 'Todas' : TIPO[t].label}</span>
                       <span className={cn('rounded px-1.5 text-xs', active ? 'bg-brand-primary text-white' : 'text-brand-muted')}>
                         {t === 'TODAS' ? (data?.length ?? 0) : (counts[t] ?? 0)}
@@ -115,7 +117,8 @@ export function NotificacoesView() {
             <CardBody>
               <p className="text-sm font-semibold text-white">Resumo</p>
               <p className="mt-1 text-xs text-slate-400">
-                {naoLidas} não lida(s) de {data?.length ?? 0} notificações.
+                {naoLidas} {naoLidas === 1 ? 'não lida' : 'não lidas'} de {data?.length ?? 0}{' '}
+                {data?.length === 1 ? 'notificação' : 'notificações'}.
               </p>
             </CardBody>
           </Card>
@@ -123,6 +126,7 @@ export function NotificacoesView() {
 
         <section className="space-y-3">
           <ToggleGroup
+            aria-label="Filtrar por leitura"
             value={leitura}
             onChange={setLeitura}
             options={[
@@ -133,7 +137,7 @@ export function NotificacoesView() {
           />
           {isError && <ErrorState message={getErrorMessage(error)} onRetry={refetch} />}
           {isLoading && Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-28 w-full" />)}
-          {!isLoading && lista.length === 0 && (
+          {!isLoading && !isError && lista.length === 0 && (
             <Card>
               <EmptyState title="Nenhuma notificação" description="Não há alertas para os filtros selecionados." />
             </Card>

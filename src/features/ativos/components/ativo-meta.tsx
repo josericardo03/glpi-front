@@ -1,4 +1,4 @@
-import { HardDrive, KeyRound, Laptop, Network, Server, type LucideIcon } from 'lucide-react';
+import { HardDrive, KeyRound, Laptop, Network, Router, Server, type LucideIcon } from 'lucide-react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import type { StatusAtivo, TipoAtivo } from '@/types';
 
@@ -6,7 +6,8 @@ export const TIPO_ATIVO: Record<TipoAtivo, { label: string; icon: LucideIcon }> 
   NOTEBOOK: { label: 'Notebook', icon: Laptop },
   SERVIDOR: { label: 'Servidor', icon: Server },
   LICENCA: { label: 'Licença de software', icon: KeyRound },
-  REDE: { label: 'Rede (switch/roteador)', icon: Network },
+  ROTEADOR: { label: 'Roteador', icon: Router },
+  SWITCH: { label: 'Switch', icon: Network },
   OUTRO: { label: 'Outro', icon: HardDrive },
 };
 
@@ -23,7 +24,7 @@ export const STATUS_ATIVO_OPTIONS = (Object.keys(STATUS_ATIVO) as StatusAtivo[])
 export function AtivoIcon({ tipo, className = 'h-10 w-10' }: { tipo: TipoAtivo; className?: string }) {
   const Icon = TIPO_ATIVO[tipo]?.icon ?? HardDrive;
   return (
-    <span className={`flex shrink-0 items-center justify-center rounded-md bg-slate-100 text-brand-darker ${className}`}>
+    <span aria-hidden className={`flex shrink-0 items-center justify-center rounded-md bg-slate-100 text-brand-darker ${className}`}>
       <Icon className="h-5 w-5" />
     </span>
   );

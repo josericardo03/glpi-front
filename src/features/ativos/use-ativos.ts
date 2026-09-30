@@ -1,20 +1,20 @@
 'use client';
 
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import type { AtivoFiltros, AtivoInput, Especificacao, Manutencao } from '@/types';
+import type { AtivoInput, Especificacao, Manutencao } from '@/types';
 import { ativosService } from './ativos.service';
 
 export const ativosKeys = {
   all: ['ativos'] as const,
-  list: (f: AtivoFiltros) => ['ativos', 'list', f] as const,
+  list: ['ativos', 'list'] as const,
   detail: (id: number) => ['ativos', 'detail', id] as const,
 };
 
-export const useAtivos = (f: AtivoFiltros) =>
-  useQuery({ queryKey: ativosKeys.list(f), queryFn: () => ativosService.list(f), placeholderData: keepPreviousData });
+export const useAtivos = () => useQuery({ queryKey: ativosKeys.list, queryFn: ativosService.list, staleTime: 30_000 });
 
-export const useAtivo = (id: number) => useQuery({ queryKey: ativosKeys.detail(id), queryFn: () => ativosService.get(id) });
+export const useAtivo = (id: number) =>
+  useQuery({ queryKey: ativosKeys.detail(id), queryFn: () => ativosService.get(id), enabled: Number.isInteger(id) && id > 0 });
 
 export const useCreateAtivo = () =>
   useApiMutation({ mutationFn: (i: AtivoInput) => ativosService.create(i), invalidate: [ativosKeys.all], successMessage: (_, i) => `Ativo ${i.codigo.trim().toUpperCase()} cadastrado.` });

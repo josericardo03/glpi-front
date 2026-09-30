@@ -1,7 +1,8 @@
 import { api } from '@/lib/api';
 import { byId, invalidateLookups, lookups } from '@/lib/backend/lookups';
 import { perfilPrincipal, PERFIL_RANK, toUsuario } from '@/lib/backend/usuario.mapper';
-import { data, matches, paginate, request } from '@/lib/http';
+import type { ApiUsuario } from '@/lib/backend/types';
+import { data, matches, request } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type {
@@ -14,7 +15,6 @@ import type {
   GrupoSuporte,
   MembroGrupo,
   MembroInput,
-  Paginated,
   PageParams,
   Papel,
   StatusUsuario,
@@ -30,16 +30,12 @@ export interface UsuarioFiltros extends PageParams {
 }
 
 const filtrarUsuarios = (rows: Usuario[], f: UsuarioFiltros) =>
-  paginate(
-    rows.filter(
-      (u) =>
-        (matches(u.nome, f.search) || matches(u.email, f.search)) &&
-        (!f.departamentoId || u.departamentoId === Number(f.departamentoId)) &&
-        (!f.papel || u.papeis.includes(f.papel)) &&
-        (!f.status || u.status === f.status),
-    ),
-    f.page,
-    f.pageSize,
+  rows.filter(
+    (u) =>
+      (matches(u.nome, f.search) || matches(u.email, f.search)) &&
+      (!f.departamentoId || u.departamentoId === Number(f.departamentoId)) &&
+      (!f.papel || u.papeis.includes(f.papel)) &&
+      (!f.status || u.status === f.status),
   );
 
 async function usuariosApi() {
@@ -48,9 +44,18 @@ async function usuariosApi() {
   return usuarios.map((u) => toUsuario(u, deps));
 }
 
+/** Converte a linha devolvida pela API no modelo da interface (com nome do departamento). */
+async function mapearUsuario(row: ApiUsuario) {
+  return toUsuario(row, byId(await lookups.departamentos()));
+}
+
+/** Campos alteráveis via PATCH /usuarios/:id (e-mail é imutável). */
+export type UsuarioUpdate = Partial<Pick<UsuarioInput, 'nome' | 'cargo' | 'departamentoId' | 'papeis' | 'status' | 'senha'>>;
+
 export const usuariosService = {
-  list: (f: UsuarioFiltros) =>
-    request<Paginated<Usuario>>(
+  /** Lista filtrada completa; a paginação é feita na tela. */
+  list: (f: Omit<UsuarioFiltros, 'page' | 'pageSize'>) =>
+    request<Usuario[]>(
       async () => filtrarUsuarios(await usuariosApi(), f),
       () => filtrarUsuarios(db.usuarios, f),
     ),
@@ -58,26 +63,27 @@ export const usuariosService = {
   create: (input: UsuarioInput) =>
     request<Usuario>(
       async () => {
-        const u = await data(
-          api.post('/usuarios', {
-            nome: input.nome,
-            email: input.email,
+        const row = await data(
+          api.post<ApiUsuario>('/usuarios', {
+            nome: input.nome.trim(),
+            email: input.email.trim().toLowerCase(),
             password: input.senha,
-            cargo: input.cargo,
+            cargo: input.cargo.trim(),
             perfil: perfilPrincipal(input.papeis),
             status: input.status,
             ...(input.departamentoId ? { id_departamento: input.departamentoId } : {}),
           }),
         );
         await invalidateLookups();
-        return u;
+        return mapearUsuario(row);
       },
       () => {
         if (db.usuarios.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
           throw new Error('Já existe um usuário com este e-mail (HTTP 409).');
         }
+        const { senha: _senha, ...dados } = input;
         const u: Usuario = {
-          ...input,
+          ...dados,
           id: uid(),
           tenantId: 1,
           departamentoNome: db.departamentos.find((d) => d.id === input.departamentoId)?.nome,
@@ -89,26 +95,29 @@ export const usuariosService = {
       },
     ),
 
-  /** PATCH /usuarios/:id não aceita alteração de e-mail. */
-  update: (id: number, input: UsuarioInput) =>
+  /** Envia apenas os campos informados. */
+  update: (id: number, input: UsuarioUpdate) =>
     request<Usuario>(
       async () => {
-        const u = await data(
-          api.patch(`/usuarios/${id}`, {
-            nome: input.nome,
-            cargo: input.cargo,
-            perfil: perfilPrincipal(input.papeis),
-            status: input.status,
-            ...(input.departamentoId ? { id_departamento: input.departamentoId } : {}),
-            ...(input.senha ? { password: input.senha } : {}),
+        const row = await data(
+          api.patch<ApiUsuario>(`/usuarios/${id}`, {
+            ...(input.nome !== undefined && { nome: input.nome.trim() }),
+            ...(input.cargo !== undefined && { cargo: input.cargo.trim() }),
+            ...(input.papeis && { perfil: perfilPrincipal(input.papeis) }),
+            ...(input.status && { status: input.status }),
+            ...(input.departamentoId && { id_departamento: input.departamentoId }),
+            ...(input.senha && { password: input.senha }),
           }),
         );
         await invalidateLookups();
-        return u;
+        return mapearUsuario(row);
       },
       () => {
-        const u = db.usuarios.find((x) => x.id === id)!;
-        Object.assign(u, input, { departamentoNome: db.departamentos.find((d) => d.id === input.departamentoId)?.nome });
+        const u = db.usuarios.find((x) => x.id === id);
+        if (!u) throw new Error('Usuário não encontrado (HTTP 404).');
+        const { senha: _senha, ...dados } = input;
+        Object.assign(u, dados);
+        if (input.departamentoId !== undefined) u.departamentoNome = db.departamentos.find((d) => d.id === input.departamentoId)?.nome;
         return u;
       },
     ),
@@ -124,7 +133,6 @@ export const departamentosService = {
           id: d.id,
           sigla: d.codigo_sigla,
           nome: d.nome,
-          descricao: '',
           gestorId: d.id_responsavel,
           gestorNome: d.id_responsavel ? (us.get(d.id_responsavel)?.nome ?? null) : null,
           departamentoPaiId: d.id_departamento_pai,
@@ -140,8 +148,8 @@ export const departamentosService = {
       async () => {
         const d = await data(
           api.post('/departamentos', {
-            codigo_sigla: input.sigla.toUpperCase(),
-            nome: input.nome,
+            codigo_sigla: input.sigla.trim().toUpperCase(),
+            nome: input.nome.trim(),
             ...(input.gestorId ? { id_responsavel: input.gestorId } : {}),
             ...(input.departamentoPaiId ? { id_departamento_pai: input.departamentoPaiId } : {}),
           }),
@@ -185,7 +193,7 @@ export const categoriasService = {
       async () => {
         const c = await data(
           api.post('/categorias', {
-            nome: input.nome,
+            nome: input.nome.trim(),
             tipo_aplicacao: input.aplicacao,
             status: input.status,
             ...(input.categoriaPaiId ? { id_categoria_pai: input.categoriaPaiId } : {}),
@@ -233,12 +241,26 @@ export const gruposService = {
 
   addMembro: (input: MembroInput) =>
     request<MembroGrupo>(
-      () => data(api.post(`/grupos-suporte/${input.grupoId}/membros`, { id_usuario: input.usuarioId })),
+      () =>
+        data(
+          api.post(`/grupos-suporte/${input.grupoId}/membros`, {
+            id_usuario: input.usuarioId,
+            ...(input.especialidade?.trim() && { cargo_especialidade: input.especialidade.trim() }),
+          }),
+        ),
       () => {
         const g = db.grupos.find((x) => x.id === input.grupoId)!;
         if (g.membros.some((m) => m.usuarioId === input.usuarioId)) throw new Error('Este técnico já é membro do grupo (HTTP 409).');
         const u = db.usuarios.find((x) => x.id === input.usuarioId)!;
-        const m: MembroGrupo = { id: uid(), ...input, nome: u.nome, email: u.email, cargo: u.cargo };
+        const m: MembroGrupo = {
+          id: uid(),
+          grupoId: input.grupoId,
+          usuarioId: input.usuarioId,
+          nome: u.nome,
+          email: u.email,
+          cargo: input.especialidade?.trim() || u.cargo,
+          cargaTrabalho: 0,
+        };
         g.membros.push(m);
         return m;
       },
@@ -252,7 +274,7 @@ export const tecnicosService = {
       async () =>
         (await lookups.usuarios())
           .filter((u) => u.status === 'ATIVO' && PERFIL_RANK[u.perfil] >= PERFIL_RANK.TECNICO)
-          .map((u) => ({ id: u.id, nome: u.nome, nivel: u.cargo, grupoId: 0, avatarUrl: u.avatar_url })),
+          .map((u) => ({ id: u.id, nome: u.nome, nivel: u.cargo, grupoId: null, avatarUrl: u.avatar_url })),
       () => db.tecnicos,
     ),
 };

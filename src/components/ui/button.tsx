@@ -33,8 +33,8 @@ export function buttonVariants({
     'inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-1',
     'disabled:pointer-events-none disabled:opacity-50',
-    VARIANTS[variant],
     SIZES[size],
+    VARIANTS[variant],
     className,
   );
 }
@@ -58,7 +58,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={buttonVariants({ variant, size, className })}
       {...props}
     >
-      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
+      {loading ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : icon}
       {children}
     </button>
   );

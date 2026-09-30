@@ -1,43 +1,88 @@
 'use client';
 
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/components/ui/toast';
 import { useApiMutation } from '@/hooks/use-api-mutation';
+import { getErrorMessage } from '@/lib/api';
+import { plural } from '@/lib/format';
 import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput, MotivoPausa } from '@/types';
 import { chamadosService } from '../services/chamados.service';
 
+type FiltrosSemPagina = Omit<ChamadoFiltros, 'page' | 'pageSize'>;
+
+const semPagina = ({ page: _p, pageSize: _s, ...f }: ChamadoFiltros): FiltrosSemPagina => f;
+
 export const chamadosKeys = {
   all: ['chamados'] as const,
-  list: (f: ChamadoFiltros) => ['chamados', 'list', f] as const,
-  triagem: (f: ChamadoFiltros) => ['chamados', 'triagem', f] as const,
+  list: (f: FiltrosSemPagina) => ['chamados', 'list', f] as const,
+  triagem: (f: FiltrosSemPagina) => ['chamados', 'triagem', f] as const,
   detail: (id: number) => ['chamados', 'detail', id] as const,
 };
 
-export const useChamados = (f: ChamadoFiltros) =>
-  useQuery({ queryKey: chamadosKeys.list(f), queryFn: () => chamadosService.list(f), placeholderData: keepPreviousData });
+/** Indicadores derivados de chamados que precisam ser recalculados após qualquer mutação. */
+const DERIVADOS = [chamadosKeys.all, ['dashboard'], ['relatorios'], ['aprovacoes']] as const;
 
-export const useTriagem = (f: ChamadoFiltros) =>
-  useQuery({ queryKey: chamadosKeys.triagem(f), queryFn: () => chamadosService.triagem(f), placeholderData: keepPreviousData });
+/** Lista filtrada completa (a paginação é feita pela tela com `paginate`). */
+export const useChamados = (f: ChamadoFiltros) => {
+  const filtros = semPagina(f);
+  return useQuery({ queryKey: chamadosKeys.list(filtros), queryFn: () => chamadosService.list(filtros), placeholderData: keepPreviousData });
+};
+
+export const useTriagem = (f: ChamadoFiltros) => {
+  const filtros = semPagina(f);
+  return useQuery({ queryKey: chamadosKeys.triagem(filtros), queryFn: () => chamadosService.triagem(filtros), placeholderData: keepPreviousData });
+};
 
 export const useChamado = (id: number) =>
-  useQuery({ queryKey: chamadosKeys.detail(id), queryFn: () => chamadosService.get(id), enabled: Number.isFinite(id) });
+  useQuery({ queryKey: chamadosKeys.detail(id), queryFn: () => chamadosService.get(id), enabled: Number.isInteger(id) && id > 0 });
 
+/** Cria o chamado e envia os anexos; falhas de upload não desfazem nem duplicam o chamado. */
 export function useCreateChamado() {
-  return useApiMutation({
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
     mutationFn: async ({ input, arquivos }: { input: ChamadoInput; arquivos: File[] }) => {
       const chamado = await chamadosService.create(input);
-      await Promise.all(arquivos.map((f) => chamadosService.uploadAnexo(chamado.id, f)));
-      return chamado;
+      const uploads = await Promise.allSettled(arquivos.map((f) => chamadosService.uploadAnexo(chamado.id, f)));
+      const falhas = arquivos.filter((_, i) => uploads[i]!.status === 'rejected').map((f) => f.name);
+      return { id: chamado.id, falhas };
     },
-    invalidate: [chamadosKeys.all],
-    successMessage: (c) => `Chamado #${c.id} aberto com sucesso.`,
+    onSuccess: async ({ id, falhas }) => {
+      await Promise.all(DERIVADOS.map((queryKey) => qc.invalidateQueries({ queryKey })));
+      if (falhas.length) {
+        const naoEnviados = falhas.length === 1 ? 'não foi enviado' : 'não foram enviados';
+        toast.info(`Chamado #${id} aberto, mas ${plural(falhas.length, 'anexo', 'anexos')} ${naoEnviados}: ${falhas.join(', ')}. Anexe pelo chamado.`);
+      }
+      else toast.success(`Chamado #${id} aberto com sucesso.`);
+    },
+    onError: (err) => toast.error(getErrorMessage(err)),
   });
 }
 
 export function useAtualizarStatus() {
   return useApiMutation({
     mutationFn: ({ id, input }: { id: number; input: AtualizarStatusInput }) => chamadosService.atualizarStatus(id, input),
-    invalidate: [chamadosKeys.all],
+    invalidate: [...DERIVADOS],
     successMessage: (_, { id }) => `Chamado #${id} atualizado.`,
+  });
+}
+
+/** Mesma alteração aplicada a vários chamados, com resumo único de sucesso/falha. */
+export function useAtualizarStatusLote() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: async ({ ids, input }: { ids: number[]; input: AtualizarStatusInput }) => {
+      const r = await Promise.allSettled(ids.map((id) => chamadosService.atualizarStatus(id, input)));
+      const erros = r.flatMap((x, i) => (x.status === 'rejected' ? [`#${ids[i]}: ${getErrorMessage(x.reason)}`] : []));
+      return { ok: ids.length - erros.length, erros };
+    },
+    onSuccess: async ({ ok, erros }) => {
+      await Promise.all(DERIVADOS.map((queryKey) => qc.invalidateQueries({ queryKey })));
+      if (ok) toast.success(`${plural(ok, 'chamado atualizado', 'chamados atualizados')}.`);
+      if (erros.length) toast.error(`${plural(erros.length, 'falha', 'falhas')} — ${erros.slice(0, 3).join(' · ')}${erros.length > 3 ? ' …' : ''}`);
+    },
+    onError: (err) => toast.error(getErrorMessage(err)),
   });
 }
 
@@ -52,7 +97,7 @@ export function useComentar(id: number) {
 export function usePausar(id: number) {
   return useApiMutation({
     mutationFn: (body: { motivo: MotivoPausa }) => chamadosService.pausar(id, body),
-    invalidate: [chamadosKeys.all],
+    invalidate: [...DERIVADOS],
     successMessage: 'SLA pausado e chamado pendenciado.',
   });
 }
@@ -60,7 +105,7 @@ export function usePausar(id: number) {
 export function useWorklog(id: number) {
   return useApiMutation({
     mutationFn: (body: { descricao: string; minutos: number }) => chamadosService.registrarWorklog(id, body),
-    invalidate: [chamadosKeys.detail(id)],
+    invalidate: [chamadosKeys.detail(id), ['relatorios']],
     successMessage: 'Worklog registrado.',
   });
 }

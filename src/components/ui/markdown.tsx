@@ -8,7 +8,10 @@ function inline(text: string) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^)\s]+)\)/g, '<a href="$2" class="text-brand-primary underline" rel="noopener noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/(?![/\\]))[^)\s]+)\)/g, (_, label: string, href: string) => {
+      const externo = href.startsWith('http');
+      return `<a href="${href}" class="text-brand-primary underline"${externo ? ' target="_blank" rel="noopener noreferrer nofollow"' : ''}>${label}</a>`;
+    });
 }
 
 /**

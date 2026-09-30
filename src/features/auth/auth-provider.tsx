@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { TOKEN_KEY } from '@/lib/api';
+import { SESSION_EXPIRED_EVENT, TOKEN_KEY } from '@/lib/api';
 import { PERFIL_RANK, perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import type { LoginInput, Papel, Usuario } from '@/types';
 import { authService } from './services/auth.service';
@@ -27,7 +27,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  const encerrarSessao = useCallback(
+    (redirect: string) => {
+      localStorage.removeItem(TOKEN_KEY);
+      queryClient.clear();
+      setUser(null);
+      setStatus('unauthenticated');
+      router.replace(redirect);
+    },
+    [queryClient, router],
+  );
+
   useEffect(() => {
+    let cancelled = false;
     if (!localStorage.getItem(TOKEN_KEY)) {
       setStatus('unauthenticated');
       return;
@@ -35,29 +47,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authService
       .me()
       .then((u) => {
+        if (cancelled) return;
         setUser(u);
         setStatus('authenticated');
       })
       .catch(() => {
+        if (cancelled) return;
         localStorage.removeItem(TOKEN_KEY);
         setStatus('unauthenticated');
       });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const login = useCallback(async (input: LoginInput) => {
-    const { accessToken, usuario } = await authService.login(input);
-    localStorage.setItem(TOKEN_KEY, accessToken);
-    setUser(usuario);
-    setStatus('authenticated');
-  }, []);
+  useEffect(() => {
+    const onExpired = () => {
+      if (window.location.pathname.startsWith('/login')) return;
+      const next = window.location.pathname + window.location.search;
+      encerrarSessao(`/login?next=${encodeURIComponent(next)}`);
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === TOKEN_KEY && !e.newValue) encerrarSessao('/login');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [encerrarSessao]);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    queryClient.clear();
-    setUser(null);
-    setStatus('unauthenticated');
-    router.replace('/login');
-  }, [queryClient, router]);
+  const login = useCallback(
+    async (input: LoginInput) => {
+      const token = await authService.login(input);
+      localStorage.setItem(TOKEN_KEY, token);
+      queryClient.clear();
+      try {
+        setUser(await authService.me());
+        setStatus('authenticated');
+      } catch (err) {
+        localStorage.removeItem(TOKEN_KEY);
+        throw err;
+      }
+    },
+    [queryClient],
+  );
+
+  const logout = useCallback(() => encerrarSessao('/login'), [encerrarSessao]);
 
   const hasRole = useCallback(
     (...roles: Papel[]) => {
@@ -77,4 +114,10 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth deve ser usado dentro de <AuthProvider>');
   return ctx;
+}
+
+/** Aceita apenas caminhos internos, evitando open redirect via `?next=`. */
+export function safeRedirect(next: string | null, fallback = '/dashboard') {
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return fallback;
+  return next;
 }

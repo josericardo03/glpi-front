@@ -10,6 +10,12 @@ export function hexToChannels(hex: string) {
   return toRgb(hex).join(' ');
 }
 
+/**
+ * A cor secundária pinta o menu lateral e também o texto padrão sobre fundo claro,
+ * por isso precisa de contraste AAA (>= 7:1) com o branco.
+ */
+export const SECUNDARIA_MIN_CONTRASTE = 7;
+
 /** Razão de contraste WCAG do texto branco sobre a cor (AA exige >= 4.5). */
 export function contrastWithWhite(hex: string) {
   const [r, g, b] = toRgb(hex).map((c) => {

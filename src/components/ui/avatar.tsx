@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import { cn, initials } from '@/lib/utils';
 
 const PALETTE = [
@@ -25,21 +28,26 @@ interface AvatarProps {
 }
 
 export function Avatar({ name, src, size = 'sm', className }: AvatarProps) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const showImage = !!src && failedSrc !== src;
   return (
     <span
       className={cn(
         'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold ring-2 ring-white',
         SIZES[size],
-        !src && colorFor(name),
+        !showImage && colorFor(name),
         className,
       )}
       title={name}
     >
-      {src ? (
+      {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={name} className="h-full w-full object-cover" loading="lazy" />
+        <img src={src} alt={name} className="h-full w-full object-cover" loading="lazy" onError={() => setFailedSrc(src)} />
       ) : (
-        initials(name)
+        <>
+          <span aria-hidden>{initials(name)}</span>
+          <span className="sr-only">{name}</span>
+        </>
       )}
     </span>
   );
@@ -53,7 +61,10 @@ export function AvatarGroup({ names, max = 3, size = 'sm' }: { names: string[]; 
         <Avatar key={n} name={n} size={size} />
       ))}
       {extra > 0 && (
-        <span className={cn('inline-flex items-center justify-center rounded-full bg-slate-100 font-semibold text-brand-muted ring-2 ring-white', SIZES[size])}>
+        <span
+          className={cn('inline-flex items-center justify-center rounded-full bg-slate-100 font-semibold text-brand-muted ring-2 ring-white', SIZES[size])}
+          title={names.slice(max).join(', ')}
+        >
           +{extra}
         </span>
       )}

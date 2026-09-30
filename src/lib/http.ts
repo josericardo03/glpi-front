@@ -19,7 +19,10 @@ export async function request<T>(real: () => Promise<T>, mock: () => T | Promise
 
 export const data = <T>(p: Promise<AxiosResponse<T>>) => p.then((r) => r.data);
 
-export function paginate<T>(items: T[], page = 1, pageSize = 10): Paginated<T> {
+/** Página fora do intervalo (ex.: lista encolheu após uma mutação) é ajustada para a última existente. */
+export function paginate<T>(items: T[], requestedPage = 1, pageSize = 10): Paginated<T> {
+  const last = Math.max(1, Math.ceil(items.length / pageSize));
+  const page = Math.min(Math.max(1, requestedPage), last);
   const start = (page - 1) * pageSize;
   return {
     data: items.slice(start, start + pageSize),

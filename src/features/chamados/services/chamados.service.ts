@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
 import { currentTenantId } from '@/lib/backend/lookups';
 import type { ApiChamado, ApiChamadoDetalhe } from '@/lib/backend/types';
-import { data, matches, paginate, request } from '@/lib/http';
+import { data, matches, request } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type {
@@ -12,13 +12,13 @@ import type {
   ChamadoFiltros,
   ChamadoInput,
   Comentario,
-  Paginated,
   MotivoPausa,
   PausaSla,
   Worklog,
 } from '@/types';
 import { calcularPrioridade, SLA_SOLUCAO_MIN } from '../utils/prioridade';
-import { loadCtx, toChamado, toChamadoDetalhe } from './chamado.mapper';
+import { STATUS_LABEL, TRANSICOES } from '../utils/transicoes';
+import { listarChamados, loadCtx, toChamado, toChamadoDetalhe } from './chamado.mapper';
 
 const toResumo = ({ comentarios, worklogs, pausas, anexos, historico, ...c }: ChamadoDetalhe): Chamado => c;
 const find = (id: number) => {
@@ -47,38 +47,34 @@ function filtrar(f: ChamadoFiltros) {
   );
 }
 
-async function fetchChamados(url: string, f: ChamadoFiltros) {
-  const [rows, ctx] = await Promise.all([data(api.get<ApiChamado[]>(url, { params: f.status ? { status: f.status } : undefined })), loadCtx()]);
-  return aplicarFiltros(
-    rows.map((r) => toChamado(r, ctx)),
-    f,
-    (id) => ctx.categorias.get(id)?.id_categoria_pai,
-  );
-}
+const porSla = (a: Chamado, b: Chamado) => (a.slaRestanteMin ?? Infinity) - (b.slaRestanteMin ?? Infinity);
 
 const semEndpoint = (recurso: string) => new Error(`${recurso} ainda não está disponível na API.`);
 
+/** Listagens devolvem o conjunto filtrado completo; a paginação é feita na tela. */
 export const chamadosService = {
   list: (f: ChamadoFiltros) =>
-    request<Paginated<Chamado>>(
-      async () => paginate(await fetchChamados('/chamados', f), f.page, f.pageSize),
-      () => paginate(filtrar(f), f.page, f.pageSize),
+    request<Chamado[]>(
+      async () => {
+        const [rows, ctx] = await Promise.all([listarChamados(), loadCtx()]);
+        return aplicarFiltros(rows, f, (id) => ctx.categorias.get(id)?.id_categoria_pai).sort((a, b) => b.atualizadoEm.localeCompare(a.atualizadoEm));
+      },
+      () => filtrar(f),
     ),
 
   triagem: (f: ChamadoFiltros) =>
-    request<Paginated<Chamado>>(
+    request<Chamado[]>(
       async () => {
-        const rows = (await fetchChamados('/triagem', { ...f, status: '' })).filter((c) => !c.tecnicoId);
-        return paginate(rows.sort((a, b) => a.slaRestanteMin - b.slaRestanteMin), f.page, f.pageSize);
+        const [rows, ctx] = await Promise.all([data(api.get<ApiChamado[]>('/triagem')), loadCtx()]);
+        return aplicarFiltros(
+          rows.map((r) => toChamado(r, ctx)),
+          { ...f, status: '' },
+          (id) => ctx.categorias.get(id)?.id_categoria_pai,
+        )
+          .filter((c) => !c.tecnicoId)
+          .sort(porSla);
       },
-      () =>
-        paginate(
-          filtrar(f)
-            .filter((c) => c.status === 'NOVO' && !c.tecnicoId)
-            .sort((a, b) => a.slaRestanteMin - b.slaRestanteMin),
-          f.page,
-          f.pageSize,
-        ),
+      () => filtrar({ ...f, status: '' }).filter((c) => c.status === 'NOVO' && !c.tecnicoId).sort(porSla),
     ),
 
   get: (id: number) =>
@@ -173,7 +169,10 @@ export const chamadosService = {
         const c = find(id);
         const changes: string[] = [];
         if (input.status && input.status !== c.status) {
-          changes.push(`Status alterado para ${input.status}`);
+          if (!TRANSICOES[c.status].includes(input.status)) throw new Error(`Transição inválida: ${c.status} → ${input.status}.`);
+          if (input.status === 'RESOLVIDO' && !input.resolucao?.trim()) throw new Error('resolucao é obrigatória para RESOLVIDO.');
+          if (input.status === 'PENDENTE' && !input.motivoPausa) throw new Error('motivo_pausa é obrigatório para PENDENTE.');
+          changes.push(`Status alterado para ${STATUS_LABEL[input.status]}`);
           c.status = input.status;
           c.slaPausado = input.status === 'PENDENTE';
         }
@@ -210,6 +209,7 @@ export const chamadosService = {
       () => data(api.post(`/chamados/${id}/pausas`, { motivo_pausa: body.motivo })),
       () => {
         const c = find(id);
+        if (!TRANSICOES[c.status].includes('PENDENTE')) throw new Error('Só é possível pausar chamados novos ou em atendimento.');
         const p: PausaSla = { id: uid(), chamadoId: id, motivo: body.motivo, iniciadaEm: nowIso(), finalizadaEm: null };
         c.pausas.push(p);
         c.status = 'PENDENTE';

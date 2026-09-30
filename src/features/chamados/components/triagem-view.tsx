@@ -1,8 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
-import { ArrowLeftRight, Clock, Eye, Info, UserPlus, UsersRound } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeftRight, Clock, Eye, Inbox, UserPlus, UsersRound } from 'lucide-react';
 import {
   Button,
   Callout,
@@ -19,11 +19,14 @@ import {
 } from '@/components/ui';
 import { useDebounce, useFilters, useSelection } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
+import { plural } from '@/lib/format';
+import { paginate } from '@/lib/http';
+import { recursos } from '@/lib/recursos';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useCategoriaOptions, useGrupoOptions } from '@/features/cadastros/use-cadastros';
 import type { AtualizarStatusInput, Chamado, ChamadoFiltros } from '@/types';
-import { useAtualizarStatus, useTriagem } from '../hooks/use-chamados';
-import { PRIORIDADE_OPTIONS } from './chamado-badges';
+import { useAtualizarStatus, useAtualizarStatusLote, useTriagem } from '../hooks/use-chamados';
+import { PRIORIDADE_OPTIONS, slaVencido, transicoesComuns } from './chamado-badges';
 import { chamadoColumns } from './chamado-columns';
 import { AtribuirModal, type AtribuirModo } from './atribuir-modal';
 
@@ -39,24 +42,34 @@ export function TriagemView() {
   const { user } = useAuth();
   const { filters, setFilter, reset } = useFilters(INITIAL);
   const search = useDebounce(filters.search);
-  const { data, isLoading, isError, error, refetch } = useTriagem({ ...filters, search });
+  const { data: rows, isLoading, isError, error, refetch } = useTriagem({ ...filters, search });
+  const pagina = useMemo(() => (rows ? paginate(rows, filters.page, filters.pageSize) : undefined), [rows, filters.page, filters.pageSize]);
   const categorias = useCategoriaOptions();
   const grupos = useGrupoOptions();
-  const selection = useSelection<string | number>();
+  const selection = useSelection<number>();
   const [modo, setModo] = useState<AtribuirModo | null>(null);
   const [alvo, setAlvo] = useState<number[]>([]);
-  const atualizar = useAtualizarStatus();
-  const { mutate: atribuir } = atualizar;
+  const { mutate: atribuir } = useAtualizarStatus();
+  const lote = useAtualizarStatusLote();
+
+  const { clear } = selection;
+  useEffect(() => clear(), [filters.prioridade, filters.tipo, filters.categoriaId, filters.grupoId, search, clear]);
 
   const abrir = (m: AtribuirModo, ids: number[]) => {
     setAlvo(ids);
     setModo(m);
   };
 
-  async function confirmar(input: AtualizarStatusInput) {
-    await Promise.all(alvo.map((id) => atualizar.mutateAsync({ id, input })));
-    selection.clear();
-    setModo(null);
+  function confirmar(input: AtualizarStatusInput) {
+    lote.mutate(
+      { ids: alvo, input },
+      {
+        onSuccess: () => {
+          selection.clear();
+          setModo(null);
+        },
+      },
+    );
   }
 
   const columns = useMemo<Column<Chamado>[]>(
@@ -68,9 +81,15 @@ export function TriagemView() {
         align: 'right',
         cell: (c) => (
           <Menu
+            label={`Ações do chamado #${c.id}`}
             items={[
-              { label: 'Atribuir a mim', icon: <UserPlus className="h-4 w-4" />, onClick: () => user && atribuir({ id: c.id, input: { tecnicoId: user.id } }) },
-              { label: 'Atribuir para grupo', icon: <UsersRound className="h-4 w-4" />, onClick: () => abrir('grupo', [c.id]) },
+              ...(recursos.atribuicaoChamado
+                ? [
+                    { label: 'Atribuir a mim', icon: <UserPlus className="h-4 w-4" />, onClick: () => user && atribuir({ id: c.id, input: { tecnicoId: user.id } }) },
+                    { label: 'Atribuir para grupo', icon: <UsersRound className="h-4 w-4" />, onClick: () => abrir('grupo', [c.id]) },
+                  ]
+                : []),
+              { label: 'Mudar status', icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => abrir('status', [c.id]) },
               { label: 'Ver detalhes', icon: <Eye className="h-4 w-4" />, onClick: () => router.push(`/chamados/${c.id}`) },
             ]}
           />
@@ -80,10 +99,14 @@ export function TriagemView() {
     [user, router, atribuir],
   );
 
-  const rows = data?.data ?? [];
-  const vencidos = rows.filter((c) => c.slaRestanteMin < 0).length;
-  const proximos = rows.filter((c) => c.slaRestanteMin >= 0 && c.slaRestanteMin <= 120).length;
-  const ids = [...selection.selected].map(Number);
+  const todos = rows ?? [];
+  const vencidos = todos.filter(slaVencido).length;
+  const proximos = todos.filter((c) => c.slaRestanteMin !== null && c.slaRestanteMin >= 0 && c.slaRestanteMin <= 120).length;
+  const ids = [...selection.selected];
+  const statusPermitidos = useMemo(
+    () => transicoesComuns(alvo.map((id) => todos.find((c) => c.id === id)?.status).filter((s) => s !== undefined)),
+    [alvo, todos],
+  );
 
   return (
     <>
@@ -93,14 +116,18 @@ export function TriagemView() {
         breadcrumbs={[{ label: 'Chamados', href: '/chamados' }, { label: 'Fila de Triagem' }]}
         actions={
           <>
-            <Button variant="outline" icon={<UsersRound className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('grupo', ids)}>
-              Atribuir para Grupo
-            </Button>
-            <Button variant="outline" icon={<UserPlus className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('tecnico', ids)}>
-              Atribuir para Técnico
-            </Button>
+            {recursos.atribuicaoChamado && (
+              <>
+                <Button variant="outline" icon={<UsersRound className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('grupo', ids)}>
+                  Atribuir para Grupo
+                </Button>
+                <Button variant="outline" icon={<UserPlus className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('tecnico', ids)}>
+                  Atribuir para Técnico
+                </Button>
+              </>
+            )}
             <Button variant="dark" icon={<ArrowLeftRight className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('status', ids)}>
-              Mudar Status
+              Mudar Status{ids.length ? ` (${ids.length})` : ''}
             </Button>
           </>
         }
@@ -124,38 +151,49 @@ export function TriagemView() {
         </Field>
       </FilterBar>
 
+      {!recursos.atribuicaoChamado && (
+        <Callout tone="info" className="mb-4">
+          A atribuição de técnico e grupo ainda não está disponível na API. Por aqui é possível iniciar o atendimento ou pendenciar os chamados.
+        </Callout>
+      )}
+
       {isError ? (
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
       ) : (
         <DataTable
           columns={columns}
-          data={data?.data}
+          data={pagina?.data}
           loading={isLoading}
           rowKey={(c) => c.id}
           selection={selection}
-          rowClassName={(c) => (c.slaRestanteMin < 0 ? 'bg-red-50/40' : undefined)}
-          emptyMessage="Nenhum chamado aguardando triagem. 🎉"
-          footer={data && <Pagination page={filters.page!} pageSize={filters.pageSize!} total={data.total} onPageChange={(p) => setFilter('page', p)} label="chamados em triagem" />}
+          rowClassName={(c) => (slaVencido(c) ? 'bg-red-50/40' : undefined)}
+          emptyMessage="Nenhum chamado aguardando triagem."
+          footer={pagina && <Pagination page={pagina.page} pageSize={pagina.pageSize} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="chamados em triagem" />}
         />
       )}
 
       <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <Callout tone="danger" title="Atenção ao SLA">
-          Existem {vencidos} tickets com SLA vencido que precisam de atribuição imediata.
+        <Callout tone={vencidos ? 'danger' : 'success'} title="Atenção ao SLA">
+          {vencidos
+            ? `${plural(vencidos, 'chamado', 'chamados')} com SLA vencido ${vencidos === 1 ? 'aguarda' : 'aguardam'} ação imediata.`
+            : 'Nenhum chamado da triagem está com SLA vencido.'}
         </Callout>
         <Callout tone="warning" title="Próximos Vencimentos" icon={<Clock className="h-5 w-5" />}>
-          {proximos} chamados vencerão nas próximas 2 horas. Organize a fila de prioridades.
+          {proximos
+            ? `${plural(proximos, 'chamado vence', 'chamados vencem')} nas próximas 2 horas.`
+            : 'Nenhum vencimento previsto para as próximas 2 horas.'}
         </Callout>
-        <Callout tone="info" title="Tempo Médio de Triagem" icon={<Info className="h-5 w-5" />}>
-          <span className="text-2xl font-bold text-brand-darker">12m</span> <span className="text-xs">hoje</span>
+        <Callout tone="info" title="Aguardando Triagem" icon={<Inbox className="h-5 w-5" />}>
+          <span className="text-2xl font-bold text-brand-darker">{todos.length}</span> <span className="text-xs">{todos.length === 1 ? 'chamado' : 'chamados'} sem técnico atribuído</span>
         </Callout>
       </div>
 
       <AtribuirModal
         open={modo !== null}
-        modo={modo ?? 'grupo'}
+        modo={modo ?? 'status'}
         quantidade={alvo.length}
-        loading={atualizar.isPending}
+        statusPermitidos={statusPermitidos}
+        loading={lote.isPending}
         onClose={() => setModo(null)}
         onConfirm={confirmar}
       />

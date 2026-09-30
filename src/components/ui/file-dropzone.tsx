@@ -36,13 +36,20 @@ export function FileDropzone({
       else if (f.size > maxSizeMb * 1024 * 1024) onError?.(`${f.name} excede o limite de ${maxSizeMb}MB`);
       else valid.push(f);
     }
-    onChange(multiple ? [...files, ...valid] : valid.slice(0, 1));
+    if (!valid.length) return;
+    if (!multiple) return onChange(valid.slice(0, 1));
+    const novos = valid.filter((v) => !files.some((f) => f.name === v.name && f.size === v.size));
+    onChange([...files, ...novos]);
   }
 
   function onDrop(e: DragEvent) {
     e.preventDefault();
     setDragging(false);
     add(e.dataTransfer.files);
+  }
+
+  function onDragLeave(e: DragEvent) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
   }
 
   return (
@@ -54,14 +61,14 @@ export function FileDropzone({
           e.preventDefault();
           setDragging(true);
         }}
-        onDragLeave={() => setDragging(false)}
+        onDragLeave={onDragLeave}
         onDrop={onDrop}
         className={cn(
           'flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors',
           dragging ? 'border-brand-accent bg-blue-50' : 'border-slate-300 hover:border-brand-accent hover:bg-slate-50',
         )}
       >
-        <CloudUpload className="h-8 w-8 text-brand-muted" />
+        <CloudUpload aria-hidden className="h-8 w-8 text-brand-muted" />
         <p className="text-sm text-brand-darker">
           Arraste arquivos aqui ou <span className="font-semibold text-brand-primary">clique para procurar</span>
         </p>
@@ -69,7 +76,7 @@ export function FileDropzone({
           {hint ?? `${accept.map((a) => a.slice(1).toUpperCase()).join(', ')} (máx ${maxSizeMb}MB)`}
         </p>
       </button>
-      <input ref={inputRef} type="file" hidden multiple={multiple} accept={accept.join(',')} onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
+      <input ref={inputRef} type="file" hidden tabIndex={-1} aria-hidden multiple={multiple} accept={accept.join(',')} onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
       {files.length > 0 && (
         <ul className="mt-3 space-y-2">
           {files.map((f, i) => (

@@ -24,8 +24,6 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   roles?: Papel[];
-  /** Rotas adicionais que também ativam o item. */
-  match?: string[];
 }
 
 export interface NavSection {
@@ -50,7 +48,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Usuários', href: '/usuarios', icon: Users, roles: ['ADMIN', 'GESTOR'] },
       { label: 'Departamentos', href: '/departamentos', icon: Building2, roles: ['ADMIN', 'GESTOR'] },
-      { label: 'Categorias', href: '/categorias', icon: FolderTree, roles: ['ADMIN'] },
+      { label: 'Categorias', href: '/categorias', icon: FolderTree, roles: ['GESTOR'] },
       { label: 'Equipes de Suporte', href: '/grupos', icon: UsersRound, roles: ['ADMIN', 'GESTOR'] },
     ],
   },
@@ -66,13 +64,23 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-export const TOP_LINKS = [
+export const TOP_LINKS: { label: string; href: string; roles?: Papel[] }[] = [
   { label: 'Fila Global', href: '/chamados' },
-  { label: 'Triagem', href: '/chamados/triagem' },
-  { label: 'Aprovações', href: '/aprovacoes' },
-  { label: 'SLA', href: '/admin/sla' },
+  { label: 'Triagem', href: '/chamados/triagem', roles: ['TECNICO'] },
+  { label: 'Aprovações', href: '/aprovacoes', roles: ['GESTOR'] },
+  { label: 'SLA', href: '/admin/sla', roles: ['ADMIN'] },
 ];
 
 export function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+const ROUTE_ROLES: { href: string; roles: Papel[] }[] = [
+  ...NAV_SECTIONS.flatMap((s) => s.items).filter((i): i is NavItem & { roles: Papel[] } => !!i.roles),
+  { href: '/chamados/triagem', roles: ['TECNICO'] as Papel[] },
+].sort((a, b) => b.href.length - a.href.length);
+
+/** Perfis exigidos pela rota (prefixo mais específico); `undefined` = qualquer usuário autenticado. */
+export function requiredRoles(pathname: string): Papel[] | undefined {
+  return ROUTE_ROLES.find((r) => isActive(pathname, r.href))?.roles;
 }

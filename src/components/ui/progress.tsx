@@ -21,7 +21,8 @@ interface ProgressProps {
 }
 
 export function Progress({ value, max = 100, tone = 'primary', size = 'sm', className, label }: ProgressProps) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  const ratio = max > 0 ? value / max : 0;
+  const pct = Number.isFinite(ratio) ? Math.max(0, Math.min(100, ratio * 100)) : 0;
   const h = { xs: 'h-1', sm: 'h-1.5', md: 'h-2.5' }[size];
   return (
     <div

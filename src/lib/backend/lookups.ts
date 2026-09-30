@@ -35,7 +35,15 @@ function jwtPayload(): { sub: number; id_cliente: number } {
   const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
   const payload = token?.split('.')[1];
   if (!payload) throw new Error('Sessão expirada. Faça login novamente.');
-  return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  try {
+    const raw = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { sub: unknown; id_cliente: unknown };
+    const sub = Number(raw.sub);
+    const idCliente = Number(raw.id_cliente);
+    if (!Number.isFinite(sub) || !Number.isFinite(idCliente)) throw new Error();
+    return { sub, id_cliente: idCliente };
+  } catch {
+    throw new Error('Sessão inválida. Faça login novamente.');
+  }
 }
 
 /** `id_cliente` do usuário logado (necessário em GET /chamados/:idCliente/:id). */
@@ -44,6 +52,6 @@ export const currentUserId = () => jwtPayload().sub;
 
 /** Converte caminhos relativos do backend (ex.: /uploads/...) em URL absoluta. */
 export function assetUrl(path: string | null) {
-  if (!path || /^(https?:|data:)/.test(path)) return path;
+  if (!path || /^(https?:|data:image\/)/i.test(path)) return path;
   return new URL(path, api.defaults.baseURL).href;
 }

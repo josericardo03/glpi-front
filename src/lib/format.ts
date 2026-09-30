@@ -9,13 +9,35 @@ const dateTimeFmt = new Intl.DateTimeFormat('pt-BR', {
 const dateFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 const relativeFmt = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
 
-export const formatNumber = (n: number) => numberFmt.format(n);
-export const formatDateTime = (iso: string) => dateTimeFmt.format(new Date(iso));
-export const formatDate = (iso: string) => dateFmt.format(new Date(iso));
-export const formatPercent = (n: number, digits = 1) => `${n.toFixed(digits).replace('.', ',')}%`;
+const VAZIO = '—';
+
+function toDate(iso: string | null | undefined) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export const formatNumber = (n: number) => (Number.isFinite(n) ? numberFmt.format(n) : VAZIO);
+
+export function formatDateTime(iso: string | null | undefined) {
+  const d = toDate(iso);
+  return d ? dateTimeFmt.format(d) : VAZIO;
+}
+
+export function formatDate(iso: string | null | undefined) {
+  const d = toDate(iso);
+  return d ? dateFmt.format(d) : VAZIO;
+}
+
+/** `plural(1, 'chamado', 'chamados')` -> "1 chamado"; `plural(3, ...)` -> "3 chamados". */
+export const plural = (n: number, um: string, varios: string) => `${formatNumber(n)} ${n === 1 ? um : varios}`;
+
+export const formatPercent = (n: number, digits = 1) => (Number.isFinite(n) ? `${n.toFixed(digits).replace('.', ',')}%` : VAZIO);
 
 /** Converte minutos em "3h 45m" / "42m" / "2d 4h". */
 export function formatMinutes(total: number) {
+  if (!Number.isFinite(total)) return VAZIO;
+  if (total > 0 && total < 1) return '< 1m';
   const sign = total < 0 ? '-' : '';
   const abs = Math.abs(Math.round(total));
   const d = Math.floor(abs / 1440);
@@ -26,8 +48,10 @@ export function formatMinutes(total: number) {
   return `${sign}${m}m`;
 }
 
-export function timeAgo(iso: string) {
-  const diff = (new Date(iso).getTime() - Date.now()) / 1000;
+export function timeAgo(iso: string | null | undefined) {
+  const d = toDate(iso);
+  if (!d) return VAZIO;
+  const diff = (d.getTime() - Date.now()) / 1000;
   const units: [Intl.RelativeTimeFormatUnit, number][] = [
     ['day', 86400],
     ['hour', 3600],
@@ -40,6 +64,7 @@ export function timeAgo(iso: string) {
 }
 
 export function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes < 0) return VAZIO;
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;

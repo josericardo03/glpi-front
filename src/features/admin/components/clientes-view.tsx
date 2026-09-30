@@ -24,6 +24,7 @@ import { getErrorMessage } from '@/lib/api';
 import { isValidCnpj, maskCnpj } from '@/lib/cnpj';
 import { formatDate, formatNumber } from '@/lib/format';
 import { matches } from '@/lib/http';
+import { textoInvalido } from '@/lib/validation';
 import type { Cliente, ClienteInput } from '@/types';
 import { useClientes, useCreateCliente } from '../use-admin';
 
@@ -58,7 +59,14 @@ export function ClientesView() {
     [data, search, status],
   );
   const usuarios = data?.reduce((s, c) => s + (c.totalUsuarios ?? 0), 0);
+  /** A API só informa a contagem de usuários do tenant da sessão. */
+  const contagemParcial = data?.some((c) => c.totalUsuarios === null);
   const cnpjOk = isValidCnpj(form.cnpj);
+  const erros = {
+    razaoSocial: form.razaoSocial ? textoInvalido(form.razaoSocial, { rotulo: 'A razão social', max: 150 }) : undefined,
+    nomeFantasia: form.nomeFantasia ? textoInvalido(form.nomeFantasia, { rotulo: 'O nome fantasia' }) : undefined,
+  };
+  const valido = !textoInvalido(form.razaoSocial, { max: 150 }) && !textoInvalido(form.nomeFantasia) && cnpjOk;
 
   function close() {
     setOpen(false);
@@ -67,6 +75,7 @@ export function ClientesView() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!valido) return;
     create.mutate({ ...form, razaoSocial: form.razaoSocial.trim(), nomeFantasia: form.nomeFantasia.trim() }, { onSuccess: close });
   }
 
@@ -83,11 +92,17 @@ export function ClientesView() {
         <StatCard label="Tenants" value={data?.length} icon={<Building className="h-5 w-5" />} loading={isLoading} />
         <StatCard label="Ativos" value={data?.filter((c) => c.status === 'ATIVO').length} icon={<Check className="h-5 w-5" />} tone="success" loading={isLoading} />
         <StatCard label="Bloqueados" value={data?.filter((c) => c.status === 'BLOQUEADO').length} icon={<Ban className="h-5 w-5" />} tone="warning" loading={isLoading} />
-        <StatCard label="Usuários na Plataforma" value={usuarios !== undefined ? formatNumber(usuarios) : undefined} icon={<Users className="h-5 w-5" />} tone="dark" loading={isLoading} />
+        <StatCard
+          label={contagemParcial ? 'Usuários no Seu Tenant' : 'Usuários na Plataforma'}
+          value={usuarios !== undefined ? formatNumber(usuarios) : undefined}
+          icon={<Users className="h-5 w-5" />}
+          tone="dark"
+          loading={isLoading}
+        />
       </div>
 
       <FilterBar>
-        <SearchInput placeholder="Buscar por nome, razão social ou CNPJ..." value={term} onChange={(e) => setTerm(e.target.value)} />
+        <SearchInput aria-label="Buscar clientes" placeholder="Buscar por nome, razão social ou CNPJ..." value={term} onChange={(e) => setTerm(e.target.value)} />
         <Select
           aria-label="Status"
           placeholder="Todos os status"
@@ -100,7 +115,7 @@ export function ClientesView() {
       {isError ? (
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
       ) : (
-        <DataTable columns={columns} data={lista} loading={isLoading} rowKey={(c) => c.id} />
+        <DataTable columns={columns} data={lista} loading={isLoading} caption="Clientes" rowKey={(c) => c.id} emptyMessage="Nenhum cliente encontrado." />
       )}
 
       <Modal
@@ -112,24 +127,24 @@ export function ClientesView() {
         footer={
           <>
             <Button variant="outline" onClick={close}>Cancelar</Button>
-            <Button type="submit" form="form-cliente" disabled={form.razaoSocial.trim().length < 2 || form.nomeFantasia.trim().length < 2 || !cnpjOk} loading={create.isPending}>
+            <Button type="submit" form="form-cliente" disabled={!valido} loading={create.isPending}>
               Provisionar Tenant
             </Button>
           </>
         }
       >
-        <form id="form-cliente" onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
-          <Field label="Razão Social" required className="sm:col-span-2">
-            {(id) => <Input id={id} value={form.razaoSocial} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value })} />}
+        <form id="form-cliente" onSubmit={onSubmit} noValidate className="grid gap-4 sm:grid-cols-2">
+          <Field label="Razão Social" required error={erros.razaoSocial} className="sm:col-span-2">
+            {(id) => <Input id={id} maxLength={150} value={form.razaoSocial} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value })} />}
           </Field>
-          <Field label="Nome Fantasia" required>
+          <Field label="Nome Fantasia" required error={erros.nomeFantasia}>
             {(id) => (
               <Input id={id} value={form.nomeFantasia} maxLength={100} onChange={(e) => setForm({ ...form, nomeFantasia: e.target.value })} />
             )}
           </Field>
           <Field label="CNPJ" required error={form.cnpj.length === 18 && !cnpjOk ? 'CNPJ inválido.' : undefined}>
             {(id) => (
-              <Input id={id} value={form.cnpj} inputMode="numeric" placeholder="00.000.000/0000-00" className="font-mono" invalid={form.cnpj.length === 18 && !cnpjOk} onChange={(e) => setForm({ ...form, cnpj: maskCnpj(e.target.value) })} />
+              <Input id={id} value={form.cnpj} inputMode="numeric" placeholder="00.000.000/0000-00" className="font-mono" onChange={(e) => setForm({ ...form, cnpj: maskCnpj(e.target.value) })} />
             )}
           </Field>
           <Field label="Status inicial">

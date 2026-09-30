@@ -1,0 +1,26 @@
+import type { StatusChamado } from '@/types';
+
+export const STATUS_LABEL: Record<StatusChamado, string> = {
+  NOVO: 'Novo',
+  EM_ATENDIMENTO: 'Em Atendimento',
+  PENDENTE: 'Pendente',
+  RESOLVIDO: 'Resolvido',
+  CONCLUIDO: 'Concluído',
+};
+
+/** Máquina de estados do backend (`assertTransicao`). */
+export const TRANSICOES: Record<StatusChamado, StatusChamado[]> = {
+  NOVO: ['EM_ATENDIMENTO', 'PENDENTE'],
+  EM_ATENDIMENTO: ['PENDENTE', 'RESOLVIDO'],
+  PENDENTE: ['EM_ATENDIMENTO'],
+  RESOLVIDO: ['CONCLUIDO'],
+  CONCLUIDO: [],
+};
+
+export const isFinalizado = (status: StatusChamado) => status === 'RESOLVIDO' || status === 'CONCLUIDO';
+
+/** Destinos válidos para todos os status informados (ações em lote). */
+export function transicoesComuns(statuses: StatusChamado[]): StatusChamado[] {
+  if (!statuses.length) return [];
+  return TRANSICOES[statuses[0]!].filter((s) => statuses.every((st) => TRANSICOES[st].includes(s)));
+}

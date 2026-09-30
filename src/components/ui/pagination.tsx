@@ -33,6 +33,7 @@ export function Pagination({ page, pageSize, total, onPageChange, label = 'regis
       </p>
       <nav className="flex items-center gap-1" aria-label="Paginação">
         <button
+          type="button"
           className={cn(btn, 'border-brand-border bg-white hover:bg-slate-50 disabled:opacity-40')}
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
@@ -45,6 +46,7 @@ export function Pagination({ page, pageSize, total, onPageChange, label = 'regis
             <span key={`e${i}`} className="px-1 text-brand-muted">…</span>
           ) : (
             <button
+              type="button"
               key={p}
               onClick={() => onPageChange(p)}
               aria-current={p === page ? 'page' : undefined}
@@ -60,6 +62,7 @@ export function Pagination({ page, pageSize, total, onPageChange, label = 'regis
           ),
         )}
         <button
+          type="button"
           className={cn(btn, 'border-brand-border bg-white hover:bg-slate-50 disabled:opacity-40')}
           disabled={page >= last}
           onClick={() => onPageChange(page + 1)}

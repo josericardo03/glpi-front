@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Wrench } from 'lucide-react';
 import {
   Badge,
   Button,
+  Callout,
   Card,
   CardBody,
   CardHeader,
@@ -20,8 +21,9 @@ import {
 } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import { formatDate } from '@/lib/format';
-import { USE_MOCKS } from '@/lib/http';
+import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
+import { textoInvalido } from '@/lib/validation';
 import type { AtivoDetalhe, Dependencia, Manutencao } from '@/types';
 import { StatusBadge } from '@/features/chamados/components/chamado-badges';
 import { useAddEspecificacao, useAddManutencao, useAtivo } from '../use-ativos';
@@ -72,6 +74,9 @@ function DependencyGraph({ ativo }: { ativo: AtivoDetalhe }) {
   );
 }
 
+const hoje = () => new Date().toLocaleDateString('en-CA');
+const novaManutencao = (): Omit<Manutencao, 'id'> => ({ descricao: '', tipo: 'PREVENTIVA', custo: 0, realizadaEm: hoje(), responsavel: '' });
+
 export function AtivoDetalheView({ id }: { id: number }) {
   const { data: a, isLoading, isError, error, refetch } = useAtivo(id);
   const addSpec = useAddEspecificacao(id);
@@ -79,15 +84,41 @@ export function AtivoDetalheView({ id }: { id: number }) {
   const [chave, setChave] = useState('');
   const [valor, setValor] = useState('');
   const [manutOpen, setManutOpen] = useState(false);
-  const [manut, setManut] = useState<Omit<Manutencao, 'id'>>({ descricao: '', tipo: 'PREVENTIVA', custo: 0, realizadaEm: new Date().toISOString().slice(0, 10), responsavel: '' });
+  const [manut, setManut] = useState(novaManutencao);
 
   if (isLoading) return <PageLoader />;
   if (isError || !a) return <ErrorState message={getErrorMessage(error)} onRetry={refetch} />;
 
+  const detalhado = recursos.detalhesAtivo;
+  const custoValido = Number.isFinite(manut.custo) && manut.custo >= 0;
+  const manutValida = !textoInvalido(manut.descricao, { min: 3, max: 255 }) && !textoInvalido(manut.responsavel) && custoValido && !!manut.realizadaEm && manut.realizadaEm <= hoje();
+
   function onSpec(e: FormEvent) {
     e.preventDefault();
     if (!chave.trim() || !valor.trim()) return;
-    addSpec.mutate({ chave: chave.trim(), valor: valor.trim() }, { onSuccess: () => { setChave(''); setValor(''); } });
+    addSpec.mutate(
+      { chave: chave.trim(), valor: valor.trim() },
+      {
+        onSuccess: () => {
+          setChave('');
+          setValor('');
+        },
+      },
+    );
+  }
+
+  function fecharManutencao() {
+    setManutOpen(false);
+    setManut(novaManutencao());
+  }
+
+  function onManutencao(e: FormEvent) {
+    e.preventDefault();
+    if (!manutValida) return;
+    addManut.mutate(
+      { ...manut, descricao: manut.descricao.trim(), responsavel: manut.responsavel.trim(), realizadaEm: `${manut.realizadaEm}T12:00:00.000Z` },
+      { onSuccess: fecharManutencao },
+    );
   }
 
   const info = (
@@ -105,7 +136,7 @@ export function AtivoDetalheView({ id }: { id: number }) {
   return (
     <>
       <Link href="/ativos" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-muted hover:text-brand-primary">
-        <ArrowLeft className="h-4 w-4" /> Voltar ao inventário
+        <ArrowLeft className="h-4 w-4" aria-hidden /> Voltar ao inventário
       </Link>
 
       <Card className="mb-6">
@@ -129,60 +160,80 @@ export function AtivoDetalheView({ id }: { id: number }) {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          <Card>
-            <CardHeader title="Especificações Técnicas" description="Pares chave/valor (ativo_especificacoes)" />
-            <CardBody>
-              {a.especificacoes.length === 0 ? (
-                <EmptyState title="Nenhuma especificação cadastrada" />
-              ) : (
-                <dl className="divide-y divide-brand-border rounded-md border border-brand-border">
-                  {a.especificacoes.map((s) => (
-                    <div key={s.id} className="grid grid-cols-[180px_1fr] gap-4 px-4 py-2.5 text-sm">
-                      <dt className="font-medium text-brand-muted">{s.chave}</dt>
-                      <dd className="text-brand-darker">{s.valor}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-              {USE_MOCKS && (
-                <form onSubmit={onSpec} className="mt-4 grid gap-2 sm:grid-cols-[180px_1fr_auto]">
-                  <Input placeholder="Chave (ex: CPU)" value={chave} onChange={(e) => setChave(e.target.value)} />
-                  <Input placeholder="Valor" value={valor} onChange={(e) => setValor(e.target.value)} />
-                  <Button type="submit" variant="dark" loading={addSpec.isPending} icon={<Plus className="h-4 w-4" />}>Adicionar</Button>
-                </form>
-              )}
-            </CardBody>
-          </Card>
+          {!detalhado && (
+            <Callout tone="info">
+              A API atual fornece apenas os dados cadastrais do ativo. Especificações técnicas, dependências, manutenções e chamados vinculados ainda não estão disponíveis.
+            </Callout>
+          )}
+          {detalhado && (
+            <>
+              <Card>
+                <CardHeader title="Especificações Técnicas" description="Pares chave/valor (ativo_especificacoes)" />
+                <CardBody>
+                  {a.especificacoes.length === 0 ? (
+                    <EmptyState title="Nenhuma especificação cadastrada" />
+                  ) : (
+                    <dl className="divide-y divide-brand-border rounded-md border border-brand-border">
+                      {a.especificacoes.map((s) => (
+                        <div key={s.id} className="grid grid-cols-[180px_1fr] gap-4 px-4 py-2.5 text-sm">
+                          <dt className="font-medium text-brand-muted">{s.chave}</dt>
+                          <dd className="text-brand-darker">{s.valor}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  <form onSubmit={onSpec} className="mt-4 grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+                    <Input aria-label="Chave da especificação" placeholder="Chave (ex: CPU)" maxLength={100} value={chave} onChange={(e) => setChave(e.target.value)} />
+                    <Input aria-label="Valor da especificação" placeholder="Valor" maxLength={255} value={valor} onChange={(e) => setValor(e.target.value)} />
+                    <Button type="submit" variant="dark" disabled={!chave.trim() || !valor.trim()} loading={addSpec.isPending} icon={<Plus className="h-4 w-4" />}>
+                      Adicionar
+                    </Button>
+                  </form>
+                </CardBody>
+              </Card>
 
-          <Card>
-            <CardHeader title="Grafo de Dependências" description="Relacionamentos entre itens de configuração" />
-            <CardBody><DependencyGraph ativo={a} /></CardBody>
-          </Card>
+              <Card>
+                <CardHeader title="Grafo de Dependências" description="Relacionamentos entre itens de configuração" />
+                <CardBody>
+                  <DependencyGraph ativo={a} />
+                </CardBody>
+              </Card>
 
-          <Card>
-            <CardHeader
-              title="Histórico de Manutenção"
-              actions={USE_MOCKS && <Button size="sm" variant="outline" icon={<Wrench className="h-4 w-4" />} onClick={() => setManutOpen(true)}>Registrar</Button>}
-            />
-            <CardBody>
-              {a.manutencoes.length === 0 ? (
-                <EmptyState title="Nenhuma manutenção registrada" />
-              ) : (
-                <ol className="relative ml-3 space-y-5 border-l border-brand-border pl-6">
-                  {a.manutencoes.map((m) => (
-                    <li key={m.id} className="relative">
-                      <span className={cn('absolute -left-[29px] top-1 h-3 w-3 rounded-full ring-4 ring-white', m.tipo === 'CORRETIVA' ? 'bg-status-critica' : 'bg-brand-accent')} />
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold text-brand-darker">{m.descricao}</p>
-                        <Badge tone={m.tipo === 'CORRETIVA' ? 'danger' : 'primary'}>{m.tipo}</Badge>
-                      </div>
-                      <p className="text-xs text-brand-muted">{formatDate(m.realizadaEm)} · {m.responsavel} · {brl.format(m.custo)}</p>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </CardBody>
-          </Card>
+              <Card>
+                <CardHeader
+                  title="Histórico de Manutenção"
+                  actions={
+                    <Button size="sm" variant="outline" icon={<Wrench className="h-4 w-4" />} onClick={() => setManutOpen(true)}>
+                      Registrar
+                    </Button>
+                  }
+                />
+                <CardBody>
+                  {a.manutencoes.length === 0 ? (
+                    <EmptyState title="Nenhuma manutenção registrada" />
+                  ) : (
+                    <ol className="relative ml-3 space-y-5 border-l border-brand-border pl-6">
+                      {a.manutencoes.map((m) => (
+                        <li key={m.id} className="relative">
+                          <span
+                            aria-hidden
+                            className={cn('absolute -left-[29px] top-1 h-3 w-3 rounded-full ring-4 ring-white', m.tipo === 'CORRETIVA' ? 'bg-status-critica' : 'bg-brand-accent')}
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-brand-darker">{m.descricao}</p>
+                            <Badge tone={m.tipo === 'CORRETIVA' ? 'danger' : 'primary'}>{m.tipo === 'CORRETIVA' ? 'Corretiva' : 'Preventiva'}</Badge>
+                          </div>
+                          <p className="text-xs text-brand-muted">
+                            {formatDate(m.realizadaEm)} · {m.responsavel} · {brl.format(m.custo)}
+                          </p>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </CardBody>
+              </Card>
+            </>
+          )}
         </div>
 
         <aside className="space-y-6">
@@ -199,50 +250,58 @@ export function AtivoDetalheView({ id }: { id: number }) {
               </dl>
             </CardBody>
           </Card>
-          <Card>
-            <CardHeader title="Chamados Vinculados" />
-            <CardBody className="space-y-2">
-              {a.chamadosVinculados.length === 0 && <p className="text-sm text-brand-muted">Nenhum chamado vinculado.</p>}
-              {a.chamadosVinculados.map((c) => (
-                <Link key={c.id} href={`/chamados/${c.id}`} className="block rounded-md border border-brand-border p-3 hover:border-brand-accent">
-                  <p className="text-xs font-bold text-brand-primary">#{c.id}</p>
-                  <p className="text-sm font-medium text-brand-darker">{c.titulo}</p>
-                  <div className="mt-1.5"><StatusBadge status={c.status} /></div>
-                </Link>
-              ))}
-            </CardBody>
-          </Card>
+          {detalhado && (
+            <Card>
+              <CardHeader title="Chamados Vinculados" />
+              <CardBody className="space-y-2">
+                {a.chamadosVinculados.length === 0 && <p className="text-sm text-brand-muted">Nenhum chamado vinculado.</p>}
+                {a.chamadosVinculados.map((c) => (
+                  <Link key={c.id} href={`/chamados/${c.id}`} className="block rounded-md border border-brand-border p-3 hover:border-brand-accent">
+                    <p className="text-xs font-bold text-brand-primary">#{c.id}</p>
+                    <p className="text-sm font-medium text-brand-darker">{c.titulo}</p>
+                    <div className="mt-1.5">
+                      <StatusBadge status={c.status} />
+                    </div>
+                  </Link>
+                ))}
+              </CardBody>
+            </Card>
+          )}
         </aside>
       </div>
 
       <Modal
         open={manutOpen}
-        onClose={() => setManutOpen(false)}
+        onClose={fecharManutencao}
         title="Registrar Manutenção"
         footer={
           <>
-            <Button variant="outline" onClick={() => setManutOpen(false)}>Cancelar</Button>
-            <Button
-              disabled={!manut.descricao.trim() || !manut.responsavel.trim()}
-              loading={addManut.isPending}
-              onClick={() => addManut.mutate({ ...manut, realizadaEm: new Date(manut.realizadaEm).toISOString() }, { onSuccess: () => setManutOpen(false) })}
-            >
+            <Button variant="outline" onClick={fecharManutencao}>Cancelar</Button>
+            <Button type="submit" form="form-manutencao" disabled={!manutValida} loading={addManut.isPending}>
               Salvar
             </Button>
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Descrição" required className="sm:col-span-2">{(fid) => <Input id={fid} value={manut.descricao} onChange={(e) => setManut({ ...manut, descricao: e.target.value })} />}</Field>
+        <form id="form-manutencao" onSubmit={onManutencao} noValidate className="grid gap-4 sm:grid-cols-2">
+          <Field label="Descrição" required className="sm:col-span-2">
+            {(fid) => <Input id={fid} maxLength={255} value={manut.descricao} onChange={(e) => setManut({ ...manut, descricao: e.target.value })} />}
+          </Field>
           <Field label="Tipo">
             {(fid) => (
               <Select id={fid} value={manut.tipo} onChange={(e) => setManut({ ...manut, tipo: e.target.value as Manutencao['tipo'] })} options={[{ value: 'PREVENTIVA', label: 'Preventiva' }, { value: 'CORRETIVA', label: 'Corretiva' }]} />
             )}
           </Field>
-          <Field label="Custo (R$)">{(fid) => <Input id={fid} type="number" min={0} step="0.01" value={manut.custo} onChange={(e) => setManut({ ...manut, custo: Number(e.target.value) })} />}</Field>
-          <Field label="Data">{(fid) => <Input id={fid} type="date" value={manut.realizadaEm} onChange={(e) => setManut({ ...manut, realizadaEm: e.target.value })} />}</Field>
-          <Field label="Responsável" required>{(fid) => <Input id={fid} value={manut.responsavel} onChange={(e) => setManut({ ...manut, responsavel: e.target.value })} />}</Field>
-        </div>
+          <Field label="Custo (R$)" error={custoValido ? undefined : 'Informe um valor maior ou igual a zero.'}>
+            {(fid) => <Input id={fid} type="number" min={0} step="0.01" value={manut.custo} onChange={(e) => setManut({ ...manut, custo: Number(e.target.value) })} />}
+          </Field>
+          <Field label="Data" required>
+            {(fid) => <Input id={fid} type="date" max={hoje()} value={manut.realizadaEm} onChange={(e) => setManut({ ...manut, realizadaEm: e.target.value })} />}
+          </Field>
+          <Field label="Responsável" required>
+            {(fid) => <Input id={fid} maxLength={100} value={manut.responsavel} onChange={(e) => setManut({ ...manut, responsavel: e.target.value })} />}
+          </Field>
+        </form>
       </Modal>
     </>
   );

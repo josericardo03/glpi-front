@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { Bold, Image as ImageIcon, Italic, Link2, List, Send, Tag } from 'lucide-react';
+import { Send, Tag } from 'lucide-react';
 import {
   Button,
   Card,
@@ -19,10 +19,11 @@ import {
 } from '@/components/ui';
 import { formatMinutes } from '@/lib/format';
 import { useAuth } from '@/features/auth/auth-provider';
+import { usePoliticasSla } from '@/features/admin/use-admin';
 import { useCategoriaOptions } from '@/features/cadastros/use-cadastros';
 import type { ChamadoInput, Nivel, Origem, TipoChamado } from '@/types';
 import { useCreateChamado } from '../hooks/use-chamados';
-import { calcularPrioridade, SLA_SOLUCAO_MIN } from '../utils/prioridade';
+import { calcularPrioridade } from '../utils/prioridade';
 import { PRIORIDADE_META } from './chamado-badges';
 
 const ORIGENS: { value: Origem; label: string }[] = [
@@ -62,6 +63,8 @@ export function NovoChamadoForm() {
   const [errors, setErrors] = useState<Errors>({});
 
   const prioridade = calcularPrioridade(impacto, urgencia);
+  const { data: politicas } = usePoliticasSla();
+  const metaSolucao = politicas?.find((p) => p.prioridade === prioridade)?.tempoSolucaoMin;
 
   function validate(): Errors {
     const e: Errors = {};
@@ -103,12 +106,13 @@ export function NovoChamadoForm() {
           <Card>
             <CardBody className="space-y-5">
               <Field label="Título do Chamado" required error={errors.titulo}>
-                {(id) => <Input id={id} placeholder="Resumo curto e objetivo do problema ou solicitação" value={titulo} onChange={(e) => setTitulo(e.target.value)} invalid={!!errors.titulo} maxLength={150} />}
+                {(id) => <Input id={id} placeholder="Resumo curto e objetivo do problema ou solicitação" value={titulo} onChange={(e) => setTitulo(e.target.value)} invalid={!!errors.titulo} maxLength={255} />}
               </Field>
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
                   <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">Tipo</p>
                   <ToggleGroup
+                    aria-label="Tipo do chamado"
                     value={tipo}
                     onChange={setTipo}
                     className="w-full"
@@ -124,22 +128,14 @@ export function NovoChamadoForm() {
               </div>
               <Field label="Descrição Detalhada" required error={errors.descricao}>
                 {(id) => (
-                  <div className="overflow-hidden rounded-md border border-brand-border focus-within:border-brand-accent focus-within:ring-2 focus-within:ring-brand-accent/20">
-                    <div className="flex gap-1 border-b border-brand-border bg-slate-50 px-2 py-1.5 text-brand-muted">
-                      {[Bold, Italic, List, Link2, ImageIcon].map((Icon, i) => (
-                        <button key={i} type="button" className="rounded p-1.5 hover:bg-slate-200 hover:text-brand-darker" tabIndex={-1}>
-                          <Icon className="h-4 w-4" />
-                        </button>
-                      ))}
-                    </div>
-                    <Textarea
-                      id={id}
-                      className="min-h-[180px] rounded-none border-0 focus:ring-0"
-                      placeholder="Descreva os detalhes técnicos, passos para reproduzir ou justificativa da solicitação..."
-                      value={descricao}
-                      onChange={(e) => setDescricao(e.target.value)}
-                    />
-                  </div>
+                  <Textarea
+                    id={id}
+                    className="min-h-[180px]"
+                    placeholder="Descreva os detalhes técnicos, passos para reproduzir ou justificativa da solicitação..."
+                    value={descricao}
+                    onChange={(e) => setDescricao(e.target.value)}
+                    invalid={!!errors.descricao}
+                  />
                 )}
               </Field>
             </CardBody>
@@ -175,7 +171,14 @@ export function NovoChamadoForm() {
                   <span className="rounded bg-brand-primary px-2 py-0.5 text-sm font-bold uppercase">{PRIORIDADE_META[prioridade].label}</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-400">
-                  Definida automaticamente pela matriz Impacto × Urgência. Meta de solução: <strong className="text-slate-200">{formatMinutes(SLA_SOLUCAO_MIN[prioridade])}</strong>.
+                  Definida automaticamente pela matriz Impacto × Urgência.{' '}
+                  {metaSolucao !== undefined ? (
+                    <>
+                      Meta de solução: <strong className="text-slate-200">{formatMinutes(metaSolucao)}</strong>.
+                    </>
+                  ) : (
+                    'Nenhuma política de SLA cadastrada para esta prioridade.'
+                  )}
                 </p>
               </div>
             </CardBody>

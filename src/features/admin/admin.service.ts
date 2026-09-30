@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
 import { assetUrl, byId, currentTenantId, lookups } from '@/lib/backend/lookups';
 import type { ApiAuditLog, ApiBranding, ApiCliente, ApiHistoricoIntegracao, ApiIntegracao, ApiPoliticaSla } from '@/lib/backend/types';
-import { data, matches, paginate, request } from '@/lib/http';
+import { data, matches, request } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type {
@@ -14,7 +14,6 @@ import type {
   HorarioComercial,
   Integracao,
   IntegracaoInput,
-  Paginated,
   PoliticaSla,
   Prioridade,
   TesteIntegracaoResult,
@@ -31,7 +30,7 @@ function toPolitica(p: ApiPoliticaSla): PoliticaSla {
     descricao: `Aplica-se a: ${TIPO_ALVO[p.tipo_chamado_alvo] ?? p.tipo_chamado_alvo}${p.status !== 'ATIVO' ? ' · inativa' : ''}`,
     tempoRespostaMin: p.tempo_resposta_min,
     tempoSolucaoMin: p.tempo_resolucao_min,
-    calendario: 'COMERCIAL',
+    calendario: p.id_horario_comercial ? 'COMERCIAL' : '24X7',
     horarioComercialId: p.id_horario_comercial,
     notificarGestor: false,
     alertaPercentual: null,
@@ -56,6 +55,9 @@ export const slaService = {
   horarios: () => request<HorarioComercial[]>(async () => [], () => db.horariosComerciais),
 };
 
+export const LOGO_URL_RE = /^https?:\/\/\S+$/i;
+export const LOGO_URL_MAX = 255;
+
 const BRANDING_PADRAO = { corPrimaria: '#0056B3', corSecundaria: '#0F172A', corDestaque: '#3B82F6', corFundo: '#F4F6F9' };
 
 export const brandingService = {
@@ -66,7 +68,7 @@ export const brandingService = {
         return {
           nomePortal: b?.nome_portal ?? 'Portal ITSM',
           fusoHorario: 'America/Sao_Paulo',
-          logoUrl: assetUrl(b?.logo_url ?? null),
+          logoUrl: assetUrl(b?.logo_url || null),
           corPrimaria: b?.cor_primaria ?? BRANDING_PADRAO.corPrimaria,
           corSecundaria: b?.cor_secundaria ?? BRANDING_PADRAO.corSecundaria,
           corDestaque: BRANDING_PADRAO.corDestaque,
@@ -78,16 +80,19 @@ export const brandingService = {
   salvar: (b: Branding) =>
     request<unknown>(
       () => {
-        if (b.logoUrl?.startsWith('data:')) {
-          return Promise.reject(new Error('A API ainda não aceita upload de logo. Remova a imagem enviada ou use uma URL pública.'));
+        if (b.logoUrl && !LOGO_URL_RE.test(b.logoUrl)) {
+          return Promise.reject(new Error('Informe o logotipo como uma URL pública (a API não aceita upload de arquivo).'));
+        }
+        if (b.logoUrl && b.logoUrl.length > LOGO_URL_MAX) {
+          return Promise.reject(new Error(`A URL do logotipo deve ter no máximo ${LOGO_URL_MAX} caracteres.`));
         }
         return data(
           api.post('/admin/branding', {
-            nome_portal: b.nomePortal,
+            nome_portal: b.nomePortal.trim(),
             cor_primaria: b.corPrimaria,
             cor_secundaria: b.corSecundaria,
             cor_fundo: b.corFundo,
-            ...(b.logoUrl && /^https?:/.test(b.logoUrl) && { logo_url: b.logoUrl.slice(0, 255) }),
+            logo_url: b.logoUrl ?? '',
           }),
         );
       },
@@ -100,7 +105,7 @@ function toIntegracao(i: ApiIntegracao): Integracao {
   return {
     id: i.id,
     nome: i.nome,
-    tipo: (i.tipo === 'AD' ? 'LDAP' : i.tipo) as TipoIntegracao,
+    tipo: i.tipo as TipoIntegracao,
     host: String(cfg.host ?? cfg.url ?? ''),
     porta: Number(cfg.port ?? cfg.porta ?? 0),
     ativo: i.status === 'ATIVO',
@@ -191,10 +196,10 @@ function categoriaAcao(acao: string): AcaoAuditoria {
   return 'UPDATE';
 }
 
-async function auditoriaReal(f: AuditoriaFiltros): Promise<Paginated<AuditLog>> {
+async function auditoriaReal(): Promise<AuditLog[]> {
   const [rows, usuarios] = await Promise.all([data(api.get<ApiAuditLog[]>('/admin/auditoria')), lookups.usuarios()]);
   const us = byId(usuarios);
-  const logs: AuditLog[] = rows.map((l) => ({
+  return rows.map((l) => ({
     id: l.id,
     criadoEm: l.data_criacao,
     usuarioNome: l.id_usuario ? (us.get(l.id_usuario)?.nome ?? `Usuário #${l.id_usuario}`) : 'Sistema',
@@ -204,30 +209,25 @@ async function auditoriaReal(f: AuditoriaFiltros): Promise<Paginated<AuditLog>> 
     entidadeId: l.registro_id !== null ? String(l.registro_id) : '—',
     valorAntigo: l.valor_anterior,
     valorNovo: l.valor_novo,
-    ip: l.endereco_ip ?? '—',
+    ip: l.endereco_ip?.replace(/^::ffff:/i, '') || '—',
   }));
-  return paginate(
-    logs.filter(
-      (l) =>
-        (matches(l.usuarioNome, f.search) || matches(l.entidade, f.search) || matches(l.entidadeId, f.search) || matches(l.acaoDetalhe ?? '', f.search)) &&
-        (!f.acao || l.acao === f.acao),
-    ),
-    f.page,
-    f.pageSize,
+}
+
+const maisRecentes = (logs: AuditLog[]) => [...logs].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+
+export function filtrarAuditoria(logs: AuditLog[], f: Pick<AuditoriaFiltros, 'search' | 'acao'>) {
+  return logs.filter(
+    (l) =>
+      (matches(l.usuarioNome, f.search) || matches(l.entidade, f.search) || matches(l.entidadeId, f.search) || matches(l.acaoDetalhe ?? '', f.search)) &&
+      (!f.acao || l.acao === f.acao),
   );
 }
 
 export const auditoriaService = {
-  list: (f: AuditoriaFiltros) =>
-    request<Paginated<AuditLog>>(
-      () => auditoriaReal(f),
-      () =>
-        paginate(
-          db.auditLogs.filter(
-            (l) => (matches(l.usuarioNome, f.search) || matches(l.entidade, f.search) || matches(l.entidadeId, f.search)) && (!f.acao || l.acao === f.acao),
-          ),
-          f.page,
-          f.pageSize,
-        ),
+  /** Trilha completa, mais recente primeiro; filtros e paginação são aplicados na tela. */
+  list: () =>
+    request<AuditLog[]>(
+      async () => maisRecentes(await auditoriaReal()),
+      () => maisRecentes(db.auditLogs),
     ),
 };

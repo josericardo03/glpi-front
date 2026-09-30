@@ -18,9 +18,12 @@ import {
   useToast,
 } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
-import { contrastWithWhite, HEX_RE } from '@/lib/color';
+import { contrastWithWhite, HEX_RE, SECUNDARIA_MIN_CONTRASTE } from '@/lib/color';
+import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
+import { textoInvalido } from '@/lib/validation';
 import type { Branding } from '@/types';
+import { LOGO_URL_MAX, LOGO_URL_RE } from '../admin.service';
 import { useBranding, useSalvarBranding } from '../use-admin';
 import { brandingVars } from './branding-applier';
 
@@ -28,7 +31,7 @@ const DEFAULT_PALETA = { corPrimaria: '#0056B3', corSecundaria: '#0F172A', corDe
 
 const CORES: { key: keyof typeof DEFAULT_PALETA; label: string; hint: string }[] = [
   { key: 'corPrimaria', label: 'Cor Primária', hint: 'Botões e ações principais' },
-  { key: 'corSecundaria', label: 'Cor Secundária', hint: 'Menu lateral e cabeçalhos' },
+  { key: 'corSecundaria', label: 'Cor Secundária', hint: 'Menu lateral, cabeçalhos e texto (tom escuro)' },
   { key: 'corDestaque', label: 'Cor de Destaque', hint: 'Foco, links e item ativo' },
   { key: 'corFundo', label: 'Cor de Fundo', hint: 'Plano de fundo das páginas' },
 ];
@@ -64,7 +67,7 @@ function BrandingPreview({ b }: { b: Branding }) {
         <aside className="flex w-40 shrink-0 flex-col bg-brand-darker p-3 text-slate-300">
           <div className="mb-4 flex items-center gap-2">
             {b.logoUrl ? (
-              <img src={b.logoUrl} alt="Logo" className="h-7 w-7 rounded object-contain" />
+              <img src={b.logoUrl} alt="" className="h-7 w-7 rounded object-contain" />
             ) : (
               <span className="flex h-7 w-7 items-center justify-center rounded bg-brand-primary text-[10px] font-bold text-white">IT</span>
             )}
@@ -116,33 +119,51 @@ function BrandingPreview({ b }: { b: Branding }) {
   );
 }
 
+function erroLogo(url: string | null) {
+  if (!url || url.startsWith('data:image/')) return undefined;
+  if (!LOGO_URL_RE.test(url)) return 'Informe uma URL válida, como https://exemplo.com/logo.png';
+  if (url.length > LOGO_URL_MAX) return `Máximo de ${LOGO_URL_MAX} caracteres.`;
+  return undefined;
+}
+
 export function BrandingView() {
   const { data, isLoading, isError, error, refetch } = useBranding();
   const salvar = useSalvarBranding();
   const toast = useToast();
   const [draft, setDraft] = useState<Branding | null>(null);
   const [logo, setLogo] = useState<File[]>([]);
+  const [logoQuebrado, setLogoQuebrado] = useState(false);
 
   if (isLoading) return <PageLoader />;
   if (isError || !data) return <ErrorState message={getErrorMessage(error)} onRetry={refetch} />;
 
+  const avancado = recursos.brandingAvancado;
+  const cores = avancado ? CORES : CORES.filter((c) => c.key !== 'corDestaque');
   const form = draft ?? data;
   const set = (patch: Partial<Branding>) => setDraft({ ...form, ...patch });
-  const paletaValida = CORES.every((c) => HEX_RE.test(form[c.key]));
+  const paletaValida = cores.every((c) => HEX_RE.test(form[c.key]));
   const contraste = HEX_RE.test(form.corPrimaria) ? contrastWithWhite(form.corPrimaria) : 0;
+  const contrasteSecundaria = HEX_RE.test(form.corSecundaria) ? contrastWithWhite(form.corSecundaria) : 0;
+  const secundariaClara = contrasteSecundaria > 0 && contrasteSecundaria < SECUNDARIA_MIN_CONTRASTE;
+  const erroNome = textoInvalido(form.nomePortal, { rotulo: 'O nome', min: 2, max: 100 });
+  const logoErro = avancado ? undefined : erroLogo(form.logoUrl);
+  const valido = paletaValida && !secundariaClara && !erroNome && !logoErro;
 
   function onLogo(files: File[]) {
     setLogo(files);
+    setLogoQuebrado(false);
     const file = files[0];
     if (!file) return set({ logoUrl: null });
     const reader = new FileReader();
     reader.onload = () => set({ logoUrl: reader.result as string });
+    reader.onerror = () => toast.error('Não foi possível ler o arquivo selecionado.');
     reader.readAsDataURL(file);
   }
 
   function reset() {
     setDraft(null);
     setLogo([]);
+    setLogoQuebrado(false);
   }
 
   return (
@@ -156,7 +177,7 @@ export function BrandingView() {
             <Button variant="outline" icon={<RotateCcw className="h-4 w-4" />} disabled={!draft} onClick={reset}>Descartar</Button>
             <Button
               icon={<Save className="h-4 w-4" />}
-              disabled={!draft || !paletaValida || !form.nomePortal.trim()}
+              disabled={!draft || !valido}
               loading={salvar.isPending}
               onClick={() => draft && salvar.mutate(draft, { onSuccess: reset })}
             >
@@ -171,36 +192,59 @@ export function BrandingView() {
           <Card>
             <CardHeader title="Informações da Instância" icon={<LayoutDashboard className="h-5 w-5" />} />
             <CardBody className="grid gap-4 md:grid-cols-2">
-              <Field label="Nome do Portal" required>
-                {(id) => <Input id={id} value={form.nomePortal} maxLength={40} onChange={(e) => set({ nomePortal: e.target.value })} />}
+              <Field label="Nome do Portal" required error={erroNome}>
+                {(id) => <Input id={id} value={form.nomePortal} maxLength={100} onChange={(e) => set({ nomePortal: e.target.value })} />}
               </Field>
-              <Field label="Fuso Horário">
-                {(id) => <Select id={id} options={FUSOS} value={form.fusoHorario} onChange={(e) => set({ fusoHorario: e.target.value })} />}
-              </Field>
+              {avancado && (
+                <Field label="Fuso Horário">
+                  {(id) => <Select id={id} options={FUSOS} value={form.fusoHorario} onChange={(e) => set({ fusoHorario: e.target.value })} />}
+                </Field>
+              )}
             </CardBody>
           </Card>
 
           <Card>
             <CardHeader
               title="Logotipo"
-              description="PNG, SVG ou JPG com fundo transparente, até 2MB."
+              description={avancado ? 'PNG, SVG ou JPG com fundo transparente, até 2MB.' : 'Endereço público (https://) de uma imagem PNG, SVG ou JPG.'}
               icon={<ImageIcon className="h-5 w-5" />}
               actions={
                 form.logoUrl && (
-                  <Button size="sm" variant="danger-outline" icon={<Trash2 className="h-4 w-4" />} onClick={() => onLogo([])}>Remover</Button>
+                  <Button size="sm" variant="danger-outline" icon={<Trash2 className="h-4 w-4" />} onClick={() => onLogo([])}>
+                    Remover
+                  </Button>
                 )
               }
             />
             <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center">
               <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg border border-brand-border bg-brand-bg">
-                {form.logoUrl ? (
-                  <img src={form.logoUrl} alt="Logotipo atual" className="max-h-20 max-w-20 object-contain" />
+                {form.logoUrl && !logoQuebrado ? (
+                  <img src={form.logoUrl} alt="Logotipo atual" className="max-h-20 max-w-20 object-contain" onError={() => setLogoQuebrado(true)} />
                 ) : (
-                  <ImageIcon className="h-8 w-8 text-brand-muted" />
+                  <ImageIcon className="h-8 w-8 text-brand-muted" aria-hidden />
                 )}
               </div>
               <div className="flex-1">
-                <FileDropzone files={logo} onChange={onLogo} accept={['.png', '.svg', '.jpg', '.jpeg']} maxSizeMb={2} multiple={false} onError={toast.error} />
+                {avancado ? (
+                  <FileDropzone files={logo} onChange={onLogo} accept={['.png', '.svg', '.jpg', '.jpeg']} maxSizeMb={2} multiple={false} onError={toast.error} />
+                ) : (
+                  <Field label="URL do logotipo" error={logoErro} hint={logoQuebrado && !logoErro ? 'Não foi possível carregar a imagem deste endereço.' : undefined}>
+                    {(id) => (
+                      <Input
+                        id={id}
+                        type="url"
+                        inputMode="url"
+                        placeholder="https://exemplo.com/logo.png"
+                        maxLength={LOGO_URL_MAX}
+                        value={form.logoUrl ?? ''}
+                        onChange={(e) => {
+                          setLogoQuebrado(false);
+                          set({ logoUrl: e.target.value.trim() || null });
+                        }}
+                      />
+                    )}
+                  </Field>
+                )}
               </div>
             </CardBody>
           </Card>
@@ -210,10 +254,14 @@ export function BrandingView() {
               title="Paleta de Cores"
               description="Valores HEX aplicados em runtime via variáveis CSS."
               icon={<Palette className="h-5 w-5" />}
-              actions={<Button size="sm" variant="ghost" onClick={() => set(DEFAULT_PALETA)}>Restaurar padrão</Button>}
+              actions={
+                <Button size="sm" variant="ghost" onClick={() => set(DEFAULT_PALETA)}>
+                  Restaurar padrão
+                </Button>
+              }
             />
             <CardBody className="grid gap-4 md:grid-cols-2">
-              {CORES.map((c) => (
+              {cores.map((c) => (
                 <ColorField key={c.key} label={c.label} hint={c.hint} value={form[c.key]} onChange={(v) => set({ [c.key]: v })} />
               ))}
             </CardBody>
@@ -228,6 +276,12 @@ export function BrandingView() {
           {contraste > 0 && contraste < 4.5 && (
             <Callout tone="warning" title={`Contraste baixo (${contraste.toFixed(1)}:1)`}>
               Texto branco sobre a cor primária não atinge o mínimo WCAG AA de 4.5:1. Considere um tom mais escuro.
+            </Callout>
+          )}
+          {secundariaClara && (
+            <Callout tone="danger" title={`Cor secundária clara demais (${contrasteSecundaria.toFixed(1)}:1)`}>
+              A cor secundária é usada no menu lateral e no texto das páginas e precisa de contraste mínimo de{' '}
+              {SECUNDARIA_MIN_CONTRASTE}:1. Enquanto isso, o portal mantém o tom padrão.
             </Callout>
           )}
         </div>

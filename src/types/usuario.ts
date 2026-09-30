@@ -16,7 +16,7 @@ export interface Usuario {
   status: StatusUsuario;
   avatarUrl?: string | null;
   ultimoAcesso?: string | null;
-  criadoEm: string;
+  criadoEm?: string | null;
 }
 
 export interface UsuarioInput {
@@ -32,7 +32,6 @@ export interface UsuarioInput {
 export interface LoginInput {
   email: string;
   senha: string;
-  lembrar?: boolean;
 }
 
 export interface AuthResponse {

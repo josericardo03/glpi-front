@@ -1,6 +1,8 @@
 import axios, { AxiosError } from 'axios';
 
 export const TOKEN_KEY = 'itsm_token';
+/** Disparado quando a API responde 401 numa rota autenticada; o AuthProvider encerra a sessão. */
+export const SESSION_EXPIRED_EVENT = 'itsm:session-expired';
 
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000/api',
@@ -19,9 +21,9 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem(TOKEN_KEY);
-      if (!window.location.pathname.startsWith('/login')) window.location.href = '/login';
+    const isLogin = error.config?.url?.endsWith('/auth/login');
+    if (error.response?.status === 401 && !isLogin && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }
     return Promise.reject(error);
   },

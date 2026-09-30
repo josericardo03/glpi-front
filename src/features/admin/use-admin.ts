@@ -1,8 +1,8 @@
 'use client';
 
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import type { AuditoriaFiltros, Branding, ClienteInput, IntegracaoInput, PoliticaSla } from '@/types';
+import type { Branding, ClienteInput, IntegracaoInput, PoliticaSla } from '@/types';
 import { auditoriaService, brandingService, clientesService, integracoesService, slaService } from './admin.service';
 
 export const adminKeys = {
@@ -11,7 +11,7 @@ export const adminKeys = {
   branding: ['branding'] as const,
   integracoes: ['admin', 'integracoes'] as const,
   clientes: ['admin', 'clientes'] as const,
-  auditoria: (f: AuditoriaFiltros) => ['admin', 'auditoria', f] as const,
+  auditoria: ['admin', 'auditoria'] as const,
 };
 
 export const usePoliticasSla = () => useQuery({ queryKey: adminKeys.politicas, queryFn: slaService.politicas });
@@ -19,8 +19,7 @@ export const useHorarios = () => useQuery({ queryKey: adminKeys.horarios, queryF
 export const useBranding = () => useQuery({ queryKey: adminKeys.branding, queryFn: brandingService.get, staleTime: Infinity });
 export const useIntegracoes = () => useQuery({ queryKey: adminKeys.integracoes, queryFn: integracoesService.list });
 export const useClientes = () => useQuery({ queryKey: adminKeys.clientes, queryFn: clientesService.list });
-export const useAuditoria = (f: AuditoriaFiltros) =>
-  useQuery({ queryKey: adminKeys.auditoria(f), queryFn: () => auditoriaService.list(f), placeholderData: keepPreviousData });
+export const useAuditoria = () => useQuery({ queryKey: adminKeys.auditoria, queryFn: auditoriaService.list, staleTime: 30_000 });
 
 export const useSalvarSla = () =>
   useApiMutation({ mutationFn: (p: PoliticaSla[]) => slaService.salvar(p), invalidate: [adminKeys.politicas], successMessage: 'Regras de SLA salvas.' });

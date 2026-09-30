@@ -23,10 +23,12 @@ import { useDebounce, useFilters } from '@/hooks/use-filters';
 import { exportCsv } from '@/lib/csv';
 import { getErrorMessage } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { paginate } from '@/lib/http';
 import type { ChamadoFiltros, StatusChamado } from '@/types';
+import { useAuth } from '@/features/auth/auth-provider';
 import { useCategoriaOptions, useTecnicoOptions } from '@/features/cadastros/use-cadastros';
 import { useAtualizarStatus, useChamados } from '../hooks/use-chamados';
-import { PRIORIDADE_OPTIONS, STATUS_META, STATUS_OPTIONS, TRANSICOES } from './chamado-badges';
+import { isFinalizado, PRIORIDADE_META, PRIORIDADE_OPTIONS, slaVencido, STATUS_META, STATUS_OPTIONS, TRANSICOES } from './chamado-badges';
 import { chamadoColumns } from './chamado-columns';
 import { KanbanBoard } from './kanban-board';
 
@@ -40,20 +42,22 @@ export function FilaGlobalView() {
   const initial = useMemo<ChamadoFiltros>(() => ({ page: 1, pageSize: 10, search: params.get('search') ?? '', status: '', prioridade: '', categoriaId: '', tecnicoId: '' }), [params]);
   const { filters, setFilter, reset } = useFilters(initial);
   const search = useDebounce(filters.search);
-  const query = { ...filters, search, ...(view === 'kanban' ? { page: 1, pageSize: 500 } : {}) };
 
-  const { data, isLoading, isError, error, refetch } = useChamados(query);
+  const { data: rows, isLoading, isError, error, refetch } = useChamados({ ...filters, search });
+  const pagina = useMemo(() => (rows ? paginate(rows, filters.page, filters.pageSize) : undefined), [rows, filters.page, filters.pageSize]);
   const categorias = useCategoriaOptions();
   const tecnicos = useTecnicoOptions();
   const { mutate: mover } = useAtualizarStatus();
   const toast = useToast();
+  const { hasRole } = useAuth();
+  const podeMover = hasRole('TECNICO');
 
   const urlSearch = params.get('search') ?? '';
   useEffect(() => setFilter('search', urlSearch), [urlSearch, setFilter]);
 
-  const rows = data?.data;
   const onMove = useCallback(
     (id: number, status: StatusChamado) => {
+      if (!podeMover) return toast.error('Somente técnicos podem alterar o status dos chamados.');
       const atual = rows?.find((c) => c.id === id)?.status;
       if (!atual) return;
       if (!TRANSICOES[atual].includes(status)) {
@@ -65,19 +69,20 @@ export function FilaGlobalView() {
       }
       mover({ id, input: { status } });
     },
-    [rows, mover, router, toast],
+    [rows, mover, router, toast, podeMover],
   );
 
   const stats = useMemo(() => {
-    const rows = data?.data ?? [];
-    const abertos = rows.filter((c) => c.status !== 'RESOLVIDO' && c.status !== 'CONCLUIDO');
+    const todos = rows ?? [];
+    const abertos = todos.filter((c) => !isFinalizado(c.status));
+    const comSla = abertos.filter((c) => c.slaRestanteMin !== null);
     return {
       pendentes: abertos.length,
-      noPrazo: abertos.length ? (abertos.filter((c) => c.slaRestanteMin >= 0).length / abertos.length) * 100 : 100,
-      vencidos: abertos.filter((c) => c.slaRestanteMin < 0).length,
-      resolvidos: rows.filter((c) => c.status === 'RESOLVIDO' || c.status === 'CONCLUIDO').length,
+      noPrazo: comSla.length ? `${((comSla.filter((c) => !slaVencido(c)).length / comSla.length) * 100).toFixed(1)}%` : '—',
+      vencidos: abertos.filter(slaVencido).length,
+      resolvidos: todos.length - abertos.length,
     };
-  }, [data]);
+  }, [rows]);
 
   function setView(v: 'lista' | 'kanban') {
     const sp = new URLSearchParams(params);
@@ -86,13 +91,13 @@ export function FilaGlobalView() {
   }
 
   function onExport() {
-    exportCsv('chamados', data?.data ?? [], [
+    exportCsv('chamados', rows ?? [], [
       { header: 'ID', value: (c) => c.id },
       { header: 'Título', value: (c) => c.titulo },
       { header: 'Categoria', value: (c) => c.categoriaNome },
       { header: 'Solicitante', value: (c) => c.solicitanteNome },
       { header: 'Técnico', value: (c) => c.tecnicoNome },
-      { header: 'Prioridade', value: (c) => c.prioridade },
+      { header: 'Prioridade', value: (c) => PRIORIDADE_META[c.prioridade].label },
       { header: 'Status', value: (c) => STATUS_META[c.status].label },
       { header: 'Aberto em', value: (c) => formatDateTime(c.abertoEm) },
     ]);
@@ -145,27 +150,31 @@ export function FilaGlobalView() {
       {isError ? (
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
       ) : view === 'kanban' ? (
-        <KanbanBoard chamados={data?.data ?? []} onMove={onMove} />
+        <KanbanBoard chamados={rows ?? []} onMove={onMove} />
       ) : (
         <DataTable
           columns={columns}
-          data={data?.data}
+          data={pagina?.data}
           loading={isLoading}
           rowKey={(c) => c.id}
           onRowClick={(c) => router.push(`/chamados/${c.id}`)}
-          footer={data && <Pagination page={filters.page!} pageSize={filters.pageSize!} total={data.total} onPageChange={(p) => setFilter('page', p)} label="tickets" />}
+          footer={pagina && <Pagination page={pagina.page} pageSize={pagina.pageSize} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="tickets" />}
         />
       )}
 
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Total Pendentes" value={stats.pendentes} icon={<Ticket className="h-5 w-5" />} tone="primary" loading={isLoading} />
-        <StatCard label="Dentro do SLA" value={`${stats.noPrazo.toFixed(1)}%`} icon={<AlarmClock className="h-5 w-5" />} tone="success" loading={isLoading} />
+        <StatCard label="Em Aberto" value={stats.pendentes} icon={<Ticket className="h-5 w-5" />} tone="primary" loading={isLoading} />
+        <StatCard label="Dentro do SLA" value={stats.noPrazo} icon={<AlarmClock className="h-5 w-5" />} tone="success" loading={isLoading} />
         <StatCard label="SLA Vencido" value={stats.vencidos} icon={<AlertOctagon className="h-5 w-5" />} tone="danger" loading={isLoading} />
-        <StatCard label="Resolvidos" value={stats.resolvidos} icon={<CheckCheck className="h-5 w-5" />} loading={isLoading} />
+        <StatCard label="Resolvidos / Concluídos" value={stats.resolvidos} icon={<CheckCheck className="h-5 w-5" />} loading={isLoading} />
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-xs text-brand-muted">
-        {view === 'kanban' ? <KanbanSquare className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
-        {view === 'kanban' ? 'Arraste os cartões entre as colunas para alterar o status.' : 'Indicadores calculados sobre a página atual.'}
+        {view === 'kanban' ? <KanbanSquare aria-hidden className="h-3.5 w-3.5" /> : <List aria-hidden className="h-3.5 w-3.5" />}
+        {view === 'kanban'
+          ? podeMover
+            ? 'Arraste os cartões entre as colunas para alterar o status.'
+            : 'Visualização somente leitura.'
+          : 'Indicadores calculados sobre todos os chamados que atendem aos filtros.'}
       </p>
     </>
   );

@@ -18,16 +18,19 @@ interface StatCardProps {
   icon?: ReactNode;
   tone?: keyof typeof TONES;
   /** Variação percentual; positiva = verde, negativa = vermelha (inverta com `invertTrend`). */
-  trend?: number;
+  trend?: number | null;
   trendLabel?: string;
+  /** Unidade exibida após a variação (`%` ou ` p.p.` para diferenças entre percentuais). */
+  trendUnit?: string;
   invertTrend?: boolean;
   footer?: ReactNode;
   loading?: boolean;
   className?: string;
 }
 
-export function StatCard({ label, value, icon, tone = 'default', trend, trendLabel, invertTrend, footer, loading, className }: StatCardProps) {
+export function StatCard({ label, value, icon, tone = 'default', trend: rawTrend, trendLabel, trendUnit = '%', invertTrend, footer, loading, className }: StatCardProps) {
   const t = TONES[tone];
+  const trend = rawTrend ?? undefined;
   const good = trend !== undefined && (invertTrend ? trend <= 0 : trend >= 0);
   return (
     <div className={cn('flex flex-col rounded-lg border p-4 shadow-card', t.card, className)}>
@@ -35,7 +38,11 @@ export function StatCard({ label, value, icon, tone = 'default', trend, trendLab
         <p className={cn('text-[11px] font-semibold uppercase tracking-wide', tone === 'dark' ? 'text-slate-400' : 'text-brand-muted')}>
           {label}
         </p>
-        {icon && <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-md', t.icon)}>{icon}</span>}
+        {icon && (
+          <span aria-hidden className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-md', t.icon)}>
+            {icon}
+          </span>
+        )}
       </div>
       {loading ? (
         <Skeleton className="mt-2 h-8 w-24" />
@@ -44,9 +51,10 @@ export function StatCard({ label, value, icon, tone = 'default', trend, trendLab
       )}
       {trend !== undefined && !loading && (
         <p className={cn('mt-1 flex items-center gap-1 text-xs font-medium', good ? 'text-emerald-600' : 'text-status-critica')}>
-          {trend >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+          {trend >= 0 ? <TrendingUp aria-hidden className="h-3.5 w-3.5" /> : <TrendingDown aria-hidden className="h-3.5 w-3.5" />}
           {trend > 0 ? '+' : ''}
-          {trend.toFixed(1).replace('.', ',')}% {trendLabel}
+          {trend.toFixed(1).replace('.', ',')}
+          {trendUnit} {trendLabel}
         </p>
       )}
       {footer && !loading && <div className="mt-2 text-xs text-brand-muted">{footer}</div>}

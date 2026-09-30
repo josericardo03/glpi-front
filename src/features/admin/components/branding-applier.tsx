@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { HEX_RE, hexToChannels, shadeChannels } from '@/lib/color';
+import { contrastWithWhite, HEX_RE, hexToChannels, SECUNDARIA_MIN_CONTRASTE, shadeChannels } from '@/lib/color';
 import type { Branding } from '@/types';
 import { useBranding } from '../use-admin';
 
@@ -17,7 +17,13 @@ export function brandingVars(b: Paleta): Record<string, string> {
     ['--brand-accent', b.corDestaque, hexToChannels],
     ['--brand-bg', b.corFundo, hexToChannels],
   ];
-  return Object.fromEntries(entries.filter(([, hex]) => HEX_RE.test(hex)).map(([name, hex, fn]) => [name, fn(hex)]));
+  const secundariaLegivel = HEX_RE.test(b.corSecundaria) && contrastWithWhite(b.corSecundaria) >= SECUNDARIA_MIN_CONTRASTE;
+  return Object.fromEntries(
+    entries
+      .filter(([, hex]) => HEX_RE.test(hex))
+      .filter(([name]) => secundariaLegivel || !name.startsWith('--brand-dark'))
+      .map(([name, hex, fn]) => [name, fn(hex)]),
+  );
 }
 
 /** Aplica a paleta do tenant (GET /api/branding) globalmente. */

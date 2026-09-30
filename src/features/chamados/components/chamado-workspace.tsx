@@ -35,10 +35,12 @@ import {
 } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import { formatDateTime, formatMinutes } from '@/lib/format';
+import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import type { MotivoPausa, StatusChamado } from '@/types';
+import { useAuth } from '@/features/auth/auth-provider';
 import { useAtualizarStatus, useChamado, usePausar } from '../hooks/use-chamados';
-import { MOTIVOS_PAUSA, PriorityBadge, slaState, STATUS_OPTIONS, StatusBadge, TRANSICOES } from './chamado-badges';
+import { isFinalizado, MOTIVOS_PAUSA, PriorityBadge, slaState, STATUS_OPTIONS, StatusBadge, TRANSICOES } from './chamado-badges';
 import { AtribuirModal } from './atribuir-modal';
 import { AnexosTab, FollowupsTab, HistoricoTab, WorklogsTab } from './workspace-tabs';
 
@@ -54,12 +56,15 @@ export function ChamadoWorkspace({ id }: { id: number }) {
   const [reatribuir, setReatribuir] = useState(false);
   const atualizar = useAtualizarStatus();
   const pausar = usePausar(id);
+  const { hasRole } = useAuth();
+  const tecnico = hasRole('TECNICO');
 
   if (isLoading) return <PageLoader />;
   if (isError || !c) return <ErrorState message={getErrorMessage(error)} onRetry={refetch} />;
 
-  const finalizado = c.status === 'RESOLVIDO' || c.status === 'CONCLUIDO';
-  const sla = slaState(c.slaRestanteMin, c.slaTotalMin);
+  const finalizado = isFinalizado(c.status);
+  const temSla = c.slaRestanteMin !== null && c.slaTotalMin !== null;
+  const sla = temSla ? slaState(c.slaRestanteMin!, c.slaTotalMin!) : null;
   const statusOptions = STATUS_OPTIONS.filter((o) => o.value === c.status || TRANSICOES[c.status].includes(o.value));
   const setStatus = (status: StatusChamado) => {
     if (status === c.status) return;
@@ -95,11 +100,25 @@ export function ChamadoWorkspace({ id }: { id: number }) {
             <div className="w-full max-w-xs">
               <div className="mb-1.5 flex justify-between text-xs">
                 <span className="font-semibold text-brand-muted">SLA de Resolução</span>
-                <span className={cn('font-mono font-bold', c.slaPausado ? 'text-status-pendente' : sla.text)}>
-                  {c.slaPausado ? 'Pausado' : `${formatMinutes(c.slaRestanteMin)} ${c.slaRestanteMin < 0 ? 'vencido' : 'restante'}`}
+                <span className={cn('font-mono font-bold', c.slaPausado ? 'text-status-pendente' : (sla?.text ?? 'text-brand-muted'))}>
+                  {c.slaPausado
+                    ? 'Pausado'
+                    : temSla
+                      ? c.slaRestanteMin! < 0
+                        ? `vencido há ${formatMinutes(-c.slaRestanteMin!)}`
+                        : `${formatMinutes(c.slaRestanteMin!)} restante`
+                      : 'Sem SLA definido'}
                 </span>
               </div>
-              <Progress value={c.slaTotalMin - c.slaRestanteMin} max={c.slaTotalMin} tone={c.slaPausado ? 'warning' : sla.tone} size="md" />
+              {temSla && (
+                <Progress
+                  value={c.slaTotalMin! - c.slaRestanteMin!}
+                  max={c.slaTotalMin!}
+                  tone={c.slaPausado ? 'warning' : sla!.tone}
+                  size="md"
+                  label="Consumo do SLA de resolução"
+                />
+              )}
             </div>
           )}
         </CardBody>
@@ -113,9 +132,12 @@ export function ChamadoWorkspace({ id }: { id: number }) {
             items={[
               { value: 'followups', label: 'Follow-ups', icon: <MessageSquare className="h-4 w-4" />, count: c.comentarios.length },
               { value: 'anexos', label: 'Anexos', icon: <Paperclip className="h-4 w-4" />, count: c.anexos.length },
-              { value: 'worklogs', label: 'Worklogs', icon: <Clock className="h-4 w-4" />, count: c.worklogs.length },
+              ...(tecnico
+                ? [{ value: 'worklogs' as const, label: 'Worklogs', icon: <Clock className="h-4 w-4" />, count: recursos.historicoAtendimento ? c.worklogs.length : undefined }]
+                : []),
               { value: 'historico', label: 'Histórico', icon: <History className="h-4 w-4" /> },
             ]}
+            aria-label="Seções do chamado"
           />
           <CardBody>
             <div className="mb-6 rounded-md border border-brand-border bg-slate-50 p-4 text-sm text-slate-700">
@@ -124,12 +146,13 @@ export function ChamadoWorkspace({ id }: { id: number }) {
             </div>
             {tab === 'followups' && <FollowupsTab chamado={c} />}
             {tab === 'anexos' && <AnexosTab chamado={c} />}
-            {tab === 'worklogs' && <WorklogsTab chamado={c} />}
+            {tab === 'worklogs' && tecnico && <WorklogsTab chamado={c} />}
             {tab === 'historico' && <HistoricoTab chamado={c} />}
           </CardBody>
         </Card>
 
         <aside className="space-y-6">
+          {tecnico && (
           <Card>
             <CardHeader title="Ações Rápidas" />
             <CardBody className="space-y-3">
@@ -144,6 +167,7 @@ export function ChamadoWorkspace({ id }: { id: number }) {
               </Button>
             </CardBody>
           </Card>
+          )}
 
           <Card>
             <CardHeader title="Atribuição" />
@@ -166,9 +190,11 @@ export function ChamadoWorkspace({ id }: { id: number }) {
                   <p className="text-sm italic text-brand-muted">Nenhum técnico atribuído</p>
                 )}
               </div>
-              <Button variant="ghost" size="sm" className="w-full uppercase tracking-wide" icon={<ArrowLeftRight className="h-4 w-4" />} onClick={() => setReatribuir(true)}>
-                Reatribuir Técnico
-              </Button>
+              {tecnico && recursos.atribuicaoChamado && (
+                <Button variant="ghost" size="sm" className="w-full uppercase tracking-wide" icon={<ArrowLeftRight className="h-4 w-4" />} onClick={() => setReatribuir(true)}>
+                  Reatribuir Técnico
+                </Button>
+              )}
             </CardBody>
           </Card>
 
@@ -235,7 +261,7 @@ export function ChamadoWorkspace({ id }: { id: number }) {
           </>
         }
       >
-        <Field label="Resolução" required>
+        <Field label="Resolução" required hint="Mínimo de 5 caracteres.">
           {(fid) => <Textarea id={fid} value={resolucao} onChange={(e) => setResolucao(e.target.value)} />}
         </Field>
       </Modal>

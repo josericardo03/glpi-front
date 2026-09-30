@@ -1,4 +1,8 @@
+import { api } from '@/lib/api';
 import { byId, lookups } from '@/lib/backend/lookups';
+import { data } from '@/lib/http';
+import { queryClient } from '@/lib/query-client';
+import { PAPEL_LABEL } from '@/lib/backend/usuario.mapper';
 import type { ApiCategoria, ApiChamado, ApiChamadoDetalhe, ApiGrupo, ApiUsuario } from '@/lib/backend/types';
 import type { Chamado, ChamadoDetalhe, HistoricoEvento, Nivel, Origem, Prioridade, StatusChamado, TipoChamado } from '@/types';
 
@@ -11,6 +15,19 @@ export interface ChamadoCtx {
 export async function loadCtx(): Promise<ChamadoCtx> {
   const [usuarios, categorias, grupos] = await Promise.all([lookups.usuarios(), lookups.categorias(), lookups.grupos()]);
   return { usuarios: byId(usuarios), categorias: byId(categorias), grupos: byId(grupos) };
+}
+
+/**
+ * GET /chamados compartilhado entre fila, dashboard, relatórios e aprovações.
+ * A chave fica sob ['chamados'], então as mutações de chamado também a invalidam.
+ */
+export const chamadosApi = () =>
+  queryClient.fetchQuery({ queryKey: ['chamados', 'raw'], queryFn: () => data(api.get<ApiChamado[]>('/chamados')), staleTime: 15_000 });
+
+/** Chamados já mapeados para o modelo da interface. */
+export async function listarChamados(): Promise<Chamado[]> {
+  const [rows, ctx] = await Promise.all([chamadosApi(), loadCtx()]);
+  return rows.map((r) => toChamado(r, ctx));
 }
 
 /** A API não persiste impacto/urgência; são inferidos da prioridade para a matriz ITIL. */
@@ -34,9 +51,9 @@ export function toChamado(c: ApiChamado, ctx: ChamadoCtx): Chamado {
   const abertura = new Date(c.data_abertura).getTime();
   const prazo = c.data_previsao_resolucao ? new Date(c.data_previsao_resolucao).getTime() : null;
   const referencia = c.data_resolucao ? new Date(c.data_resolucao).getTime() : Date.now();
-  const slaTotalMin = prazo ? Math.max(1, Math.round((prazo - abertura) / 60_000)) : 1;
-  let slaRestanteMin = prazo ? Math.round((prazo - referencia) / 60_000) : slaTotalMin;
-  if (c.sla_vencido && slaRestanteMin >= 0) slaRestanteMin = -1;
+  const slaTotalMin = prazo ? Math.max(1, Math.round((prazo - abertura) / 60_000)) : null;
+  let slaRestanteMin = prazo ? Math.round((prazo - referencia) / 60_000) : null;
+  if (c.sla_vencido && (slaRestanteMin === null || slaRestanteMin >= 0)) slaRestanteMin = -1;
   const atualizado = [c.data_fechamento, c.data_resolucao, c.data_abertura].find(Boolean)!;
 
   return {
@@ -59,23 +76,19 @@ export function toChamado(c: ApiChamado, ctx: ChamadoCtx): Chamado {
     tecnicoNome: c.id_tecnico_atribuido ? (ctx.usuarios.get(c.id_tecnico_atribuido)?.nome ?? null) : null,
     abertoEm: c.data_abertura,
     atualizadoEm: atualizado,
-    prazoSla: c.data_previsao_resolucao ?? c.data_abertura,
+    prazoSla: c.data_previsao_resolucao,
     slaRestanteMin,
     slaTotalMin,
     slaPausado: c.status === 'PENDENTE',
   };
 }
 
-const PAPEL_LABEL: Record<string, string> = { ADMIN: 'Administrador', GESTOR: 'Gestor', TECNICO: 'Técnico', SOLICITANTE: 'Solicitante' };
-
+/** A API não expõe o histórico de status; a linha do tempo é reconstruída a partir das datas do chamado. */
 export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): ChamadoDetalhe {
   const base = toChamado(c, ctx);
   const historico: HistoricoEvento[] = [{ id: 1, descricao: 'Chamado aberto', autor: base.solicitanteNome, criadoEm: c.data_abertura }];
-  if (c.data_resolucao) historico.push({ id: 2, descricao: `Resolvido${c.resolucao ? `: ${c.resolucao}` : ''}`, autor: base.tecnicoNome ?? '—', criadoEm: c.data_resolucao });
-  if (c.data_fechamento) historico.push({ id: 3, descricao: 'Chamado concluído', autor: '—', criadoEm: c.data_fechamento });
-  if (c.tempo_acumulado_pausa_s > 0) {
-    historico.push({ id: 4, descricao: `SLA pausado por ${Math.round(c.tempo_acumulado_pausa_s / 60)} min no total`, autor: 'Motor de SLA', criadoEm: c.data_abertura });
-  }
+  if (c.data_resolucao) historico.push({ id: 2, descricao: `Resolvido${c.resolucao ? `: ${c.resolucao}` : ''}`, autor: base.tecnicoNome ?? 'Equipe de suporte', criadoEm: c.data_resolucao });
+  if (c.data_fechamento) historico.push({ id: 3, descricao: 'Chamado concluído', autor: 'Sistema', criadoEm: c.data_fechamento });
 
   return {
     ...base,
@@ -87,7 +100,7 @@ export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): Chamado
           chamadoId: cm.id_chamado,
           autorId: cm.id_autor,
           autorNome: autor?.nome ?? `Usuário #${cm.id_autor}`,
-          autorPapel: PAPEL_LABEL[autor?.perfil ?? ''] ?? '',
+          autorPapel: autor ? PAPEL_LABEL[autor.perfil] : '',
           conteudo: cm.mensagem,
           interno: cm.tipo_visibilidade === 'INTERNO',
           criadoEm: cm.data_criacao,
