@@ -23,9 +23,9 @@ export const chamadosKeys = {
 const DERIVADOS = [chamadosKeys.all, ['dashboard'], ['relatorios'], ['aprovacoes']] as const;
 
 /** Lista filtrada completa (a paginação é feita pela tela com `paginate`). */
-export const useChamados = (f: ChamadoFiltros) => {
+export const useChamados = (f: ChamadoFiltros, enabled = true) => {
   const filtros = semPagina(f);
-  return useQuery({ queryKey: chamadosKeys.list(filtros), queryFn: () => chamadosService.list(filtros), placeholderData: keepPreviousData });
+  return useQuery({ queryKey: chamadosKeys.list(filtros), queryFn: () => chamadosService.list(filtros), placeholderData: keepPreviousData, enabled });
 };
 
 export const useTriagem = (f: ChamadoFiltros) => {

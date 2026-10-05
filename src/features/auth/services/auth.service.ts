@@ -7,15 +7,16 @@ import { data, request } from '@/lib/http';
 import * as db from '@/mocks/db';
 import type { LoginInput, Tenant, Usuario } from '@/types';
 
-/** /auth/me não traz departamento nem datas; completa com o cadastro quando disponível. */
-async function perfilCompleto(u: ApiAuthUser): Promise<Usuario> {
-  try {
-    const [usuarios, departamentos] = await Promise.all([lookups.usuarios(), lookups.departamentos()]);
-    const row = usuarios.find((x) => x.id === u.id);
-    return row ? toUsuario(row, byId(departamentos)) : authUserToUsuario(u);
-  } catch {
-    return authUserToUsuario(u);
-  }
+/**
+ * /auth/me não traz departamento nem datas; completa com o cadastro quando disponível.
+ * As tabelas de apoio só dependem do token, então são buscadas em paralelo com /auth/me.
+ */
+async function meReal(): Promise<Usuario> {
+  const apoio = Promise.all([lookups.usuarios(), lookups.departamentos()]).catch(() => null);
+  const u = await data(api.get<ApiAuthUser>('/auth/me'));
+  const tabelas = await apoio;
+  const row = tabelas?.[0].find((x) => x.id === u.id);
+  return row && tabelas ? toUsuario(row, byId(tabelas[1])) : authUserToUsuario(u);
 }
 
 export const authService = {
@@ -33,7 +34,7 @@ export const authService = {
 
   me: () =>
     request<Usuario>(
-      async () => perfilCompleto(await data(api.get<ApiAuthUser>('/auth/me'))),
+      meReal,
       () => db.usuarios[0]!,
     ),
 

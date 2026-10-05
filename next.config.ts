@@ -7,9 +7,15 @@ const securityHeaders = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
 ];
 
+const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  reactCompiler: true,
   poweredByHeader: false,
+  turbopack: {
+    resolveAlias: USE_MOCKS ? {} : { '@/mocks/db': './src/mocks/db.stub.cjs' },
+  },
   experimental: {
     optimizePackageImports: ['lucide-react'],
   },

@@ -16,7 +16,12 @@ interface Props {
   vinculados: number[];
 }
 
-export function VincularAtivoModal({ chamadoId, open, onClose, vinculados }: Props) {
+/** Só monta aberto: a lista de ativos é carregada quando o modal é usado, não junto com o chamado. */
+export function VincularAtivoModal(props: Props) {
+  return props.open ? <VincularAtivoConteudo {...props} /> : null;
+}
+
+function VincularAtivoConteudo({ chamadoId, open, onClose, vinculados }: Props) {
   const { data: ativos, isLoading } = useAtivos();
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState<number | null>(null);

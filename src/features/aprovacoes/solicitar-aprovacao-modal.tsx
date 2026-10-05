@@ -23,7 +23,12 @@ interface Props {
   mudancaId?: number;
 }
 
-export function SolicitarAprovacaoModal({ open, onClose, chamadoId, mudancaId }: Props) {
+/** Só monta aberto: usuários e chamados são carregados quando o modal é usado. */
+export function SolicitarAprovacaoModal(props: Props) {
+  return props.open ? <SolicitarAprovacaoConteudo {...props} /> : null;
+}
+
+function SolicitarAprovacaoConteudo({ open, onClose, chamadoId, mudancaId }: Props) {
   const { user, hasRole } = useAuth();
   const podeMudanca = hasRole('TECNICO');
   const [origem, setOrigem] = useState<Origem>('CHAMADO');
@@ -34,7 +39,7 @@ export function SolicitarAprovacaoModal({ open, onClose, chamadoId, mudancaId }:
 
   const fixo = chamadoId !== undefined || mudancaId !== undefined;
   const { data: usuarios } = useUsuarios();
-  const { data: chamados } = useChamados({});
+  const { data: chamados } = useChamados({}, !fixo && origem === 'CHAMADO');
   const { data: mudancas } = useMudancas(open && !fixo && origem === 'MUDANCA');
 
   const aprovadores = useMemo(
