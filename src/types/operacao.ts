@@ -18,9 +18,21 @@ export interface Aprovacao {
   status: 'PENDENTE' | 'APROVADA' | 'REJEITADA';
 }
 
+/** `POST /aprovacoes`: exatamente um entre chamado e mudança; o aprovador deve ser GESTOR ou ADMIN. */
+export type AprovacaoInput = { descricao: string; aprovadorId: ID } & (
+  | { chamadoId: ID; mudancaId?: never }
+  | { mudancaId: ID; chamadoId?: never }
+);
+
+export interface Mudanca {
+  id: ID;
+  titulo: string;
+}
+
 export interface DecisaoInput {
   decisao: 'APROVADA' | 'REJEITADA';
-  justificativa: string;
+  /** Obrigatória apenas na rejeição. */
+  justificativa?: string;
 }
 
 export type TipoNotificacao = 'CHAMADO' | 'ATUALIZACAO' | 'APROVACAO' | 'SISTEMA' | 'COMENTARIO';

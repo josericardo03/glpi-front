@@ -16,7 +16,8 @@ import type {
   PausaSla,
   Worklog,
 } from '@/types';
-import { calcularPrioridade, SLA_SOLUCAO_MIN } from '../utils/prioridade';
+import { ANEXO_MAX_BYTES } from '../utils/anexos';
+import { calcularPrioridade, categoriaAceitaTipo, politicaAplicavel } from '../utils/prioridade';
 import { STATUS_LABEL, TRANSICOES } from '../utils/transicoes';
 import { listarChamados, loadCtx, toChamado, toChamadoDetalhe } from './chamado.mapper';
 
@@ -103,22 +104,28 @@ export const chamadosService = {
       },
       () => {
         const prioridade = calcularPrioridade(input.impacto, input.urgencia);
-        const sla = SLA_SOLUCAO_MIN[prioridade];
         const cat = db.categorias.find((c) => c.id === input.categoriaId);
-        const pai = db.categorias.find((c) => c.id === cat?.categoriaPaiId);
+        if (!cat) throw new Error('Categoria não encontrada (HTTP 404).');
+        if (!categoriaAceitaTipo(cat.aplicacao, input.tipo)) throw new Error('A categoria não se aplica a este tipo de chamado (HTTP 400).');
+        const politica = politicaAplicavel(db.politicasSla, prioridade, input.tipo);
+        if (!politica) throw new Error('Não há política de SLA ativa para esta prioridade e tipo de chamado (HTTP 422).');
+        const sla = politica.tempoSolucaoMin;
+        const pai = db.categorias.find((c) => c.id === cat.categoriaPaiId);
         const solicitante = db.usuarios.find((u) => u.id === input.solicitanteId)!;
         const c: ChamadoDetalhe = {
           ...input,
           id: Math.max(...db.chamados.map((x) => x.id)) + 1,
           status: 'NOVO',
           prioridade,
-          categoriaNome: pai ? `${pai.nome} / ${cat!.nome}` : (cat?.nome ?? ''),
+          categoriaNome: pai ? `${pai.nome} / ${cat.nome}` : cat.nome,
           solicitanteNome: solicitante.nome,
           grupoNome: db.grupos.find((g) => g.id === input.grupoId)?.nome ?? null,
           tecnicoNome: db.usuarios.find((u) => u.id === input.tecnicoId)?.nome ?? null,
           abertoEm: nowIso(),
           atualizadoEm: nowIso(),
+          prazoResposta: new Date(Date.now() + politica.tempoRespostaMin * 60_000).toISOString(),
           prazoSla: new Date(Date.now() + sla * 60_000).toISOString(),
+          slaVencido: false,
           slaRestanteMin: sla,
           slaTotalMin: sla,
           slaPausado: false,
@@ -133,11 +140,16 @@ export const chamadosService = {
       },
     ),
 
+  /**
+   * Multipart com o campo `arquivo`. O Content-Type explícito impede o axios de serializar o FormData
+   * como JSON (padrão da instância); no navegador ele é trocado pelo valor com boundary.
+   */
   uploadAnexo: (id: number, file: File) => {
+    if (file.size > ANEXO_MAX_BYTES) return Promise.reject(new Error(`"${file.name}" excede o limite de 20 MB.`));
     const form = new FormData();
-    form.append('arquivo', file);
+    form.append('arquivo', file, file.name);
     return request<unknown>(
-      () => data(api.post(`/chamados/${id}/anexos`, form, { headers: { 'Content-Type': 'multipart/form-data' } })),
+      () => data(api.post(`/chamados/${id}/anexos`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 })),
       () => {
         const a: Anexo = { id: uid(), chamadoId: id, nomeArquivo: file.name, tamanhoBytes: file.size, mimeType: file.type, enviadoPor: 'Você', criadoEm: nowIso() };
         find(id).anexos.push(a);

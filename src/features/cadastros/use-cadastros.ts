@@ -3,7 +3,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import type { CategoriaInput, DepartamentoInput, GrupoInput, MembroInput, UsuarioInput } from '@/types';
+import { categoriaAceitaTipo } from '@/features/chamados/utils/prioridade';
+import type { CategoriaInput, DepartamentoInput, GrupoInput, MembroInput, TipoChamado, UsuarioInput } from '@/types';
 import {
   categoriasService,
   departamentosService,
@@ -36,18 +37,19 @@ export const useGrupos = () => useQuery({ queryKey: cadastrosKeys.grupos, queryF
 export const useTecnicos = () => useQuery({ queryKey: cadastrosKeys.tecnicos, queryFn: tecnicosService.list, ...LOOKUP });
 
 // ---------- Options para <Select> (memoizadas) ----------
-export function useCategoriaOptions() {
+/** Com `tipo`, lista só as categorias que a API aceita para esse tipo de chamado. */
+export function useCategoriaOptions(tipo?: TipoChamado) {
   const { data } = useCategorias();
   return useMemo(() => {
     const byId = new Map(data?.map((c) => [c.id, c]));
     return (data ?? [])
-      .filter((c) => c.status === 'ATIVO')
+      .filter((c) => c.status === 'ATIVO' && (!tipo || categoriaAceitaTipo(c.aplicacao, tipo)))
       .map((c) => {
         const pai = c.categoriaPaiId ? byId.get(c.categoriaPaiId) : undefined;
         return { value: c.id, label: pai ? `${pai.nome} / ${c.nome}` : c.nome };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [data]);
+  }, [data, tipo]);
 }
 
 export function useTecnicoOptions() {

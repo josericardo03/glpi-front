@@ -43,11 +43,13 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       </form>
 
       <nav className="hidden items-center gap-1 xl:flex" aria-label="Atalhos">
-        {TOP_LINKS.filter((l) => !l.roles || hasRole(...l.roles)).map((l) => {
+        {TOP_LINKS.filter(
+          (l) => (!l.roles || hasRole(...l.roles)) && (!l.somente || (!!user && l.somente.includes(perfilPrincipal(user.papeis)))),
+        ).map((l) => {
           const active = pathname === l.href;
           return (
             <Link
-              key={l.href}
+              key={l.label}
               href={l.href}
               aria-current={active ? 'page' : undefined}
               className={cn(

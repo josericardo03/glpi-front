@@ -28,7 +28,10 @@ export interface Chamado {
   abertoEm: string;
   atualizadoEm: string;
   /** Campos de SLA ficam `null` quando nenhuma política foi aplicada ao chamado. */
+  prazoResposta: string | null;
   prazoSla: string | null;
+  /** Prazo estourado segundo a API (`sla_vencido`). */
+  slaVencido: boolean;
   /** Minutos restantes para o vencimento do SLA (negativo = vencido). */
   slaRestanteMin: number | null;
   slaTotalMin: number | null;

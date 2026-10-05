@@ -3,7 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/toast';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import { getErrorMessage } from '@/lib/api';
+import { getErrorMessage, HTTP_MESSAGES, httpStatus } from '@/lib/api';
 import { plural } from '@/lib/format';
 import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput, MotivoPausa } from '@/types';
 import { chamadosService } from '../services/chamados.service';
@@ -36,6 +36,14 @@ export const useTriagem = (f: ChamadoFiltros) => {
 export const useChamado = (id: number) =>
   useQuery({ queryKey: chamadosKeys.detail(id), queryFn: () => chamadosService.get(id), enabled: Number.isInteger(id) && id > 0 });
 
+function erroAbertura(err: unknown) {
+  const status = httpStatus(err);
+  if (status === 422) return 'Não há política de SLA ativa para a prioridade e o tipo deste chamado. Ajuste impacto/urgência ou acione o administrador.';
+  const msg = getErrorMessage(err);
+  if (status === 400 && msg === HTTP_MESSAGES[400]) return 'A categoria escolhida não é válida para este tipo de chamado.';
+  return msg;
+}
+
 /** Cria o chamado e envia os anexos; falhas de upload não desfazem nem duplicam o chamado. */
 export function useCreateChamado() {
   const qc = useQueryClient();
@@ -55,7 +63,7 @@ export function useCreateChamado() {
       }
       else toast.success(`Chamado #${id} aberto com sucesso.`);
     },
-    onError: (err) => toast.error(getErrorMessage(err)),
+    onError: (err) => toast.error(erroAbertura(err)),
   });
 }
 

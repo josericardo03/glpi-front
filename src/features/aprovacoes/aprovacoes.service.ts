@@ -4,7 +4,7 @@ import type { ApiAprovacao, ApiChamado } from '@/lib/backend/types';
 import { data, request } from '@/lib/http';
 import { chamadosApi } from '@/features/chamados/services/chamado.mapper';
 import * as db from '@/mocks/db';
-import type { Aprovacao, DecisaoInput, Prioridade } from '@/types';
+import type { Aprovacao, AprovacaoInput, DecisaoInput, Mudanca, Prioridade } from '@/types';
 
 interface ApiMudanca {
   id: number;
@@ -52,6 +52,51 @@ async function pendentesReal(): Promise<Aprovacao[]> {
 
 export const aprovacoesService = {
   pendentes: () => request<Aprovacao[]>(pendentesReal, () => db.aprovacoes.filter((a) => a.status === 'PENDENTE')),
+
+  mudancas: () =>
+    request<Mudanca[]>(
+      async () => (await data(api.get<ApiMudanca[]>('/mudancas'))).map((m) => ({ id: m.id, titulo: m.titulo })),
+      () => [
+        { id: 881, titulo: 'Janela de manutenção - Cluster SQL' },
+        { id: 882, titulo: 'Migração do firewall de borda' },
+      ],
+    ),
+
+  criar: (input: AprovacaoInput) =>
+    request<unknown>(
+      () =>
+        data(
+          api.post('/aprovacoes', {
+            descricao: input.descricao,
+            id_aprovador: input.aprovadorId,
+            ...(input.chamadoId !== undefined ? { id_chamado: input.chamadoId } : { id_mudanca: input.mudancaId }),
+          }),
+        ),
+      () => {
+        const aprovador = db.usuarios.find((u) => u.id === input.aprovadorId);
+        if (!aprovador || !aprovador.papeis.some((p) => p === 'GESTOR' || p === 'ADMIN')) {
+          throw new Error('O aprovador precisa ser um usuário GESTOR ou ADMIN (HTTP 400).');
+        }
+        const chamado = input.chamadoId !== undefined ? db.chamados.find((c) => c.id === input.chamadoId) : undefined;
+        if (input.chamadoId !== undefined && !chamado) throw new Error('Chamado não encontrado (HTTP 404).');
+        const a: Aprovacao = {
+          id: Math.max(0, ...db.aprovacoes.map((x) => x.id)) + 1,
+          titulo: chamado?.titulo ?? `Mudança #${input.mudancaId}`,
+          descricao: input.descricao,
+          origem: chamado ? 'CHAMADO' : 'MUDANCA',
+          chamadoId: input.chamadoId ?? null,
+          mudancaId: input.mudancaId ?? null,
+          solicitanteNome: db.usuarios[0]!.nome,
+          prioridade: chamado?.prioridade ?? 'MEDIA',
+          risco: null,
+          custoEstimado: null,
+          solicitadoEm: new Date().toISOString(),
+          status: 'PENDENTE',
+        };
+        db.aprovacoes.push(a);
+        return a;
+      },
+    ),
 
   decidir: (id: number, input: DecisaoInput) =>
     request<unknown>(

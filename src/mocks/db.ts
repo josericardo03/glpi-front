@@ -151,7 +151,9 @@ export const chamados: ChamadoDetalhe[] = seedChamados.map(
       tecnicoNome: nomeUsuario(tecnicoId),
       abertoEm: ago(abertoHa),
       atualizadoEm: ago(Math.floor(abertoHa / 3)),
+      prazoResposta: ahead(Math.round(slaTotalMin / 8) - abertoHa),
       prazoSla: ahead(slaTotalMin - abertoHa),
+      slaVencido: !finalizado && slaTotalMin - abertoHa < 0,
       slaRestanteMin: finalizado ? slaTotalMin : slaTotalMin - abertoHa,
       slaTotalMin,
       slaPausado: status === 'PENDENTE',
@@ -304,7 +306,7 @@ export const politicasSla: PoliticaSla[] = (
     ['BAIXA', 'Baixa - Consultas e Pequenos Ajustes', 'Dúvidas e ajustes simples', 480, 7200, 'COMERCIAL', false, null],
   ] as [Prioridade, string, string, number, number, '24X7' | 'COMERCIAL', boolean, number | null][]
 ).map(([prioridade, nome, descricao, tempoRespostaMin, tempoSolucaoMin, calendario, notificarGestor, alertaPercentual], i) => ({
-  id: i + 1, prioridade, nome, descricao, tempoRespostaMin, tempoSolucaoMin, calendario,
+  id: i + 1, prioridade, tipoAlvo: 'AMBOS' as const, ativa: true, nome, descricao, tempoRespostaMin, tempoSolucaoMin, calendario,
   horarioComercialId: calendario === 'COMERCIAL' ? 1 : null, notificarGestor, alertaPercentual,
 }));
 

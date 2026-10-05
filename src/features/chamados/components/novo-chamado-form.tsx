@@ -20,10 +20,11 @@ import {
 import { formatMinutes } from '@/lib/format';
 import { useAuth } from '@/features/auth/auth-provider';
 import { usePoliticasSla } from '@/features/admin/use-admin';
-import { useCategoriaOptions } from '@/features/cadastros/use-cadastros';
+import { useCategoriaOptions, useCategorias } from '@/features/cadastros/use-cadastros';
 import type { ChamadoInput, Nivel, Origem, TipoChamado } from '@/types';
 import { useCreateChamado } from '../hooks/use-chamados';
-import { calcularPrioridade } from '../utils/prioridade';
+import { ANEXO_EXTENSOES, ANEXO_MAX_MB } from '../utils/anexos';
+import { calcularPrioridade, categoriaAceitaTipo, politicaAplicavel } from '../utils/prioridade';
 import { PRIORIDADE_META } from './chamado-badges';
 
 const ORIGENS: { value: Origem; label: string }[] = [
@@ -49,12 +50,13 @@ export function NovoChamadoForm() {
   const router = useRouter();
   const toast = useToast();
   const { user } = useAuth();
-  const categorias = useCategoriaOptions();
   const create = useCreateChamado();
 
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [tipo, setTipo] = useState<TipoChamado>('INCIDENTE');
+  const categorias = useCategoriaOptions(tipo);
+  const { data: todasCategorias } = useCategorias();
   const [origem, setOrigem] = useState<Origem>('PORTAL');
   const [categoriaId, setCategoriaId] = useState('');
   const [impacto, setImpacto] = useState<Nivel>('BAIXO');
@@ -64,7 +66,14 @@ export function NovoChamadoForm() {
 
   const prioridade = calcularPrioridade(impacto, urgencia);
   const { data: politicas } = usePoliticasSla();
-  const metaSolucao = politicas?.find((p) => p.prioridade === prioridade)?.tempoSolucaoMin;
+  const politica = politicas && politicaAplicavel(politicas, prioridade, tipo);
+  const semPolitica = !!politicas && !politica;
+
+  function trocarTipo(novo: TipoChamado) {
+    setTipo(novo);
+    const atual = todasCategorias?.find((c) => c.id === Number(categoriaId));
+    if (atual && !categoriaAceitaTipo(atual.aplicacao, novo)) setCategoriaId('');
+  }
 
   function validate(): Errors {
     const e: Errors = {};
@@ -80,6 +89,10 @@ export function NovoChamadoForm() {
     setErrors(e);
     if (Object.keys(e).length) {
       toast.error('Campos obrigatórios marcados com * precisam ser preenchidos.');
+      return;
+    }
+    if (semPolitica) {
+      toast.error('Não há política de SLA ativa para esta prioridade e tipo. Ajuste impacto/urgência ou acione o administrador.');
       return;
     }
     const input: ChamadoInput = {
@@ -114,7 +127,7 @@ export function NovoChamadoForm() {
                   <ToggleGroup
                     aria-label="Tipo do chamado"
                     value={tipo}
-                    onChange={setTipo}
+                    onChange={trocarTipo}
                     className="w-full"
                     options={[
                       { value: 'INCIDENTE', label: 'Incidente' },
@@ -144,7 +157,7 @@ export function NovoChamadoForm() {
           <Card>
             <CardHeader title="Anexos" />
             <CardBody>
-              <FileDropzone files={arquivos} onChange={setArquivos} accept={['.pdf', '.png', '.jpg', '.jpeg', '.zip']} onError={toast.error} />
+              <FileDropzone files={arquivos} onChange={setArquivos} accept={ANEXO_EXTENSOES} maxSizeMb={ANEXO_MAX_MB} onError={toast.error} />
             </CardBody>
           </Card>
         </div>
@@ -156,7 +169,7 @@ export function NovoChamadoForm() {
               <Field label="Solicitante" hint="O chamado é aberto em nome do usuário logado.">
                 {(id) => <Input id={id} value={user?.nome ?? ''} disabled />}
               </Field>
-              <Field label="Categoria" required error={errors.categoriaId}>
+              <Field label="Categoria" required error={errors.categoriaId} hint={`Somente categorias válidas para ${tipo === 'INCIDENTE' ? 'incidentes' : 'requisições'}.`}>
                 {(id) => <Select id={id} placeholder="Selecione uma categoria..." options={categorias} value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} invalid={!!errors.categoriaId} />}
               </Field>
               <Field label="Impacto">
@@ -171,15 +184,20 @@ export function NovoChamadoForm() {
                   <span className="rounded bg-brand-primary px-2 py-0.5 text-sm font-bold uppercase">{PRIORIDADE_META[prioridade].label}</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-400">
-                  Definida automaticamente pela matriz Impacto × Urgência.{' '}
-                  {metaSolucao !== undefined ? (
+                  Definida automaticamente pela matriz Impacto × Urgência.
+                  {politica && (
                     <>
-                      Meta de solução: <strong className="text-slate-200">{formatMinutes(metaSolucao)}</strong>.
+                      {' '}
+                      Primeira resposta em <strong className="text-slate-200">{formatMinutes(politica.tempoRespostaMin)}</strong> e solução em{' '}
+                      <strong className="text-slate-200">{formatMinutes(politica.tempoSolucaoMin)}</strong>.
                     </>
-                  ) : (
-                    'Nenhuma política de SLA cadastrada para esta prioridade.'
                   )}
                 </p>
+                {semPolitica && (
+                  <p role="alert" className="mt-2 rounded bg-red-500/15 px-2 py-1.5 text-xs font-medium text-red-200">
+                    Não há política de SLA ativa para esta prioridade e tipo; a abertura será recusada.
+                  </p>
+                )}
               </div>
             </CardBody>
           </Card>

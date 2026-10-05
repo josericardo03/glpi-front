@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Check, CheckSquare, Flame, GitPullRequestArrow, Ticket, X } from 'lucide-react';
+import { Check, CheckSquare, Flame, GitPullRequestArrow, Plus, Ticket, X } from 'lucide-react';
 import { Badge, Button, Card, CardBody, EmptyState, ErrorState, Field, Modal, PageHeader, Skeleton, StatCard, Tabs, Textarea } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import { timeAgo } from '@/lib/format';
 import { PriorityBadge } from '@/features/chamados/components/chamado-badges';
 import type { Aprovacao, DecisaoInput } from '@/types';
+import { useAuth } from '@/features/auth/auth-provider';
+import { SolicitarAprovacaoModal } from './solicitar-aprovacao-modal';
 import { useAprovacoesPendentes, useDecidirAprovacao } from './use-aprovacoes';
 
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -22,6 +24,8 @@ export function AprovacoesView() {
   const [filtro, setFiltro] = useState<Filtro>('TODAS');
   const [decisao, setDecisao] = useState<{ item: Aprovacao; tipo: DecisaoInput['decisao'] } | null>(null);
   const [justificativa, setJustificativa] = useState('');
+  const [solicitarOpen, setSolicitarOpen] = useState(false);
+  const podeSolicitar = useAuth().hasRole('TECNICO');
 
   function fechar() {
     setDecisao(null);
@@ -51,7 +55,18 @@ export function AprovacoesView() {
 
   return (
     <>
-      <PageHeader title="Central de Aprovações" description="Aprovação de requisições e mudanças pelo gestor ou CAB (Change Advisory Board)." />
+      <PageHeader
+        title="Central de Aprovações"
+        description="Aprovação de requisições e mudanças pelo gestor ou CAB (Change Advisory Board)."
+        actions={
+          podeSolicitar && (
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setSolicitarOpen(true)}>
+              Nova Solicitação
+            </Button>
+          )
+        }
+      />
+      {podeSolicitar && <SolicitarAprovacaoModal open={solicitarOpen} onClose={() => setSolicitarOpen(false)} />}
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Pendentes" value={data?.length} icon={<CheckSquare className="h-5 w-5" />} tone="primary" loading={isLoading} />

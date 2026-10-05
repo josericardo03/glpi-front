@@ -12,6 +12,7 @@ import type { Anexo, ChamadoDetalhe } from '@/types';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useComentar, useUploadAnexo, useWorklog } from '../hooks/use-chamados';
 import { chamadosService } from '../services/chamados.service';
+import { ANEXO_EXTENSOES, ANEXO_MAX_MB } from '../utils/anexos';
 
 export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
   const [texto, setTexto] = useState('');
@@ -172,7 +173,7 @@ export function AnexosTab({ chamado }: { chamado: ChamadoDetalhe }) {
 
   return (
     <div className="space-y-5">
-      <FileDropzone files={files} onChange={setFiles} onError={toast.error} />
+      <FileDropzone files={files} onChange={setFiles} accept={ANEXO_EXTENSOES} maxSizeMb={ANEXO_MAX_MB} onError={toast.error} />
       {files.length > 0 && (
         <Button onClick={enviar} loading={upload.isPending} icon={<Paperclip className="h-4 w-4" />}>
           Enviar {plural(files.length, 'arquivo', 'arquivos')}

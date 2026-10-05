@@ -3,11 +3,13 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
   CalendarClock,
   CalendarDays,
   CheckCircle2,
+  CheckSquare,
   Clock,
   Database,
   History,
@@ -15,6 +17,7 @@ import {
   Paperclip,
   PauseCircle,
   Server,
+  ShieldAlert,
   UserRound,
 } from 'lucide-react';
 import {
@@ -23,6 +26,7 @@ import {
   Card,
   CardBody,
   CardHeader,
+  EmptyState,
   ErrorState,
   Field,
   Label,
@@ -33,12 +37,13 @@ import {
   Tabs,
   Textarea,
 } from '@/components/ui';
-import { getErrorMessage } from '@/lib/api';
+import { getErrorMessage, httpStatus } from '@/lib/api';
 import { formatDateTime, formatMinutes } from '@/lib/format';
 import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import type { MotivoPausa, StatusChamado } from '@/types';
 import { useAuth } from '@/features/auth/auth-provider';
+import { SolicitarAprovacaoModal } from '@/features/aprovacoes/solicitar-aprovacao-modal';
 import { useAtualizarStatus, useChamado, usePausar } from '../hooks/use-chamados';
 import { isFinalizado, MOTIVOS_PAUSA, PriorityBadge, slaState, STATUS_OPTIONS, StatusBadge, TRANSICOES } from './chamado-badges';
 import { AtribuirModal } from './atribuir-modal';
@@ -54,12 +59,34 @@ export function ChamadoWorkspace({ id }: { id: number }) {
   const [resolverOpen, setResolverOpen] = useState(false);
   const [resolucao, setResolucao] = useState('');
   const [reatribuir, setReatribuir] = useState(false);
+  const [aprovacaoOpen, setAprovacaoOpen] = useState(false);
   const atualizar = useAtualizarStatus();
   const pausar = usePausar(id);
   const { hasRole } = useAuth();
   const tecnico = hasRole('TECNICO');
 
   if (isLoading) return <PageLoader />;
+  const status = httpStatus(error);
+  if (status === 403 || status === 404) {
+    return (
+      <Card>
+        <EmptyState
+          icon={<ShieldAlert className="h-10 w-10" />}
+          title={status === 403 ? 'Acesso não permitido' : 'Chamado não encontrado'}
+          description={
+            status === 403
+              ? `O chamado #${id} pertence a outro solicitante. Você só pode visualizar os chamados que abriu.`
+              : `O chamado #${id} não existe ou foi removido.`
+          }
+          action={
+            <Link href="/chamados" className="text-sm font-semibold text-brand-primary hover:underline">
+              Voltar aos meus chamados
+            </Link>
+          }
+        />
+      </Card>
+    );
+  }
   if (isError || !c) return <ErrorState message={getErrorMessage(error)} onRetry={refetch} />;
 
   const finalizado = isFinalizado(c.status);
@@ -88,7 +115,13 @@ export function ChamadoWorkspace({ id }: { id: number }) {
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-brand-muted">
               <span className="flex items-center gap-1.5"><UserRound className="h-3.5 w-3.5" /> Solicitante: {c.solicitanteNome}</span>
               <span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" /> Aberto em: {formatDateTime(c.abertoEm)}</span>
-              <span className="flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" /> Previsão: {formatDateTime(c.prazoSla)}</span>
+              {c.prazoResposta && (
+                <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Primeira resposta até: {formatDateTime(c.prazoResposta)}</span>
+              )}
+              <span className="flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" /> Solução até: {formatDateTime(c.prazoSla)}</span>
+              {c.slaVencido && !finalizado && (
+                <span className="flex items-center gap-1.5 font-semibold text-status-critica"><AlertTriangle className="h-3.5 w-3.5" /> SLA vencido</span>
+              )}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <StatusBadge status={c.status} />
@@ -164,6 +197,9 @@ export function ChamadoWorkspace({ id }: { id: number }) {
               </Button>
               <Button className="w-full" icon={<CheckCircle2 className="h-4 w-4" />} disabled={!TRANSICOES[c.status].includes('RESOLVIDO')} loading={atualizar.isPending} onClick={() => setResolverOpen(true)}>
                 Resolver Chamado
+              </Button>
+              <Button variant="ghost" className="w-full" icon={<CheckSquare className="h-4 w-4" />} disabled={finalizado} onClick={() => setAprovacaoOpen(true)}>
+                Solicitar Aprovação
               </Button>
             </CardBody>
           </Card>
@@ -265,6 +301,8 @@ export function ChamadoWorkspace({ id }: { id: number }) {
           {(fid) => <Textarea id={fid} value={resolucao} onChange={(e) => setResolucao(e.target.value)} />}
         </Field>
       </Modal>
+
+      {tecnico && <SolicitarAprovacaoModal open={aprovacaoOpen} onClose={() => setAprovacaoOpen(false)} chamadoId={id} />}
 
       <AtribuirModal
         open={reatribuir}

@@ -1,10 +1,12 @@
 import type { ID } from './common';
-import type { Prioridade } from './chamado';
+import type { Prioridade, TipoChamado } from './chamado';
 
 /** Tabela `politicas_sla` (metas em minutos) */
 export interface PoliticaSla {
   id: ID;
   prioridade: Prioridade;
+  tipoAlvo: TipoChamado | 'AMBOS';
+  ativa: boolean;
   nome: string;
   descricao: string;
   tempoRespostaMin: number;

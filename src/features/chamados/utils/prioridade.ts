@@ -1,4 +1,4 @@
-import type { Nivel, Prioridade } from '@/types';
+import type { AplicacaoCategoria, Nivel, PoliticaSla, Prioridade, TipoChamado } from '@/types';
 
 const MATRIZ: Record<Nivel, Record<Nivel, Prioridade>> = {
   ALTO: { ALTO: 'CRITICA', MEDIO: 'ALTA', BAIXO: 'MEDIA' },
@@ -18,3 +18,10 @@ export const SLA_SOLUCAO_MIN: Record<Prioridade, number> = {
   MEDIA: 1440,
   BAIXA: 2400,
 };
+
+/** A API recusa (400) categorias de outro tipo; só `AMBOS` ou o mesmo tipo do chamado são aceitas. */
+export const categoriaAceitaTipo = (aplicacao: AplicacaoCategoria, tipo: TipoChamado) => aplicacao === 'AMBOS' || aplicacao === tipo;
+
+/** Política ativa que a API aplicará na abertura; sem ela a criação responde 422. */
+export const politicaAplicavel = (politicas: PoliticaSla[], prioridade: Prioridade, tipo: TipoChamado) =>
+  politicas.find((p) => p.ativa && p.prioridade === prioridade && (p.tipoAlvo === 'AMBOS' || p.tipoAlvo === tipo));

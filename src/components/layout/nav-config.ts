@@ -64,8 +64,10 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-export const TOP_LINKS: { label: string; href: string; roles?: Papel[] }[] = [
-  { label: 'Fila Global', href: '/chamados' },
+/** `roles`: exige um dos perfis; `somente`: exibe apenas para estes perfis (sem herança de hierarquia). */
+export const TOP_LINKS: { label: string; href: string; roles?: Papel[]; somente?: Papel[] }[] = [
+  { label: 'Fila Global', href: '/chamados', roles: ['TECNICO'] },
+  { label: 'Meus Chamados', href: '/chamados', somente: ['SOLICITANTE'] },
   { label: 'Triagem', href: '/chamados/triagem', roles: ['TECNICO'] },
   { label: 'Aprovações', href: '/aprovacoes', roles: ['GESTOR'] },
   { label: 'SLA', href: '/admin/sla', roles: ['ADMIN'] },

@@ -29,7 +29,7 @@ api.interceptors.response.use(
   },
 );
 
-const HTTP_MESSAGES: Record<number, string> = {
+export const HTTP_MESSAGES: Record<number, string> = {
   400: 'Requisição inválida.',
   401: 'Sessão expirada. Faça login novamente.',
   403: 'Você não tem permissão para executar esta ação.',
@@ -38,6 +38,8 @@ const HTTP_MESSAGES: Record<number, string> = {
   422: 'Dados inválidos. Verifique os campos do formulário.',
   500: 'Erro interno no servidor.',
 };
+
+export const httpStatus = (error: unknown) => (axios.isAxiosError(error) ? error.response?.status : undefined);
 
 export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {

@@ -54,7 +54,7 @@ export function PriorityBadge({ prioridade, variant = 'badge' }: { prioridade: P
   );
 }
 
-export const slaVencido = (c: Pick<Chamado, 'slaRestanteMin'>) => c.slaRestanteMin !== null && c.slaRestanteMin < 0;
+export const slaVencido = (c: Pick<Chamado, 'slaVencido' | 'slaRestanteMin'>) => c.slaVencido || (c.slaRestanteMin !== null && c.slaRestanteMin < 0);
 
 export function slaState(restanteMin: number, totalMin: number) {
   if (restanteMin < 0) return { label: 'SLA vencido', tone: 'danger' as const, text: 'text-status-critica' };

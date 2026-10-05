@@ -106,9 +106,9 @@ export function FilaGlobalView() {
   return (
     <>
       <PageHeader
-        title="Fila Global de Chamados"
-        description="Gerencie e visualize todos os chamados abertos no sistema."
-        breadcrumbs={[{ label: 'Chamados' }, { label: 'Fila Global' }]}
+        title={podeMover ? 'Fila Global de Chamados' : 'Meus Chamados'}
+        description={podeMover ? 'Gerencie e visualize todos os chamados abertos no sistema.' : 'Acompanhe os chamados que você abriu.'}
+        breadcrumbs={[{ label: 'Chamados' }, { label: podeMover ? 'Fila Global' : 'Meus Chamados' }]}
         actions={
           <>
             <ToggleGroup

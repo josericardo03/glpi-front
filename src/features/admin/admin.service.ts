@@ -26,6 +26,8 @@ function toPolitica(p: ApiPoliticaSla): PoliticaSla {
   return {
     id: p.id,
     prioridade: p.prioridade_alvo as Prioridade,
+    tipoAlvo: p.tipo_chamado_alvo as PoliticaSla['tipoAlvo'],
+    ativa: p.status === 'ATIVO',
     nome: p.nome,
     descricao: `Aplica-se a: ${TIPO_ALVO[p.tipo_chamado_alvo] ?? p.tipo_chamado_alvo}${p.status !== 'ATIVO' ? ' · inativa' : ''}`,
     tempoRespostaMin: p.tempo_resposta_min,

@@ -81,6 +81,7 @@ export interface ApiChamado {
   prioridade: string;
   status: string;
   data_abertura: string;
+  data_previsao_resposta: string | null;
   data_previsao_resolucao: string | null;
   data_resolucao: string | null;
   data_fechamento: string | null;
