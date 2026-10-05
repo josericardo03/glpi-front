@@ -88,6 +88,58 @@ export interface ApiChamado {
   resolucao: string | null;
   tempo_acumulado_pausa_s: number;
   sla_vencido: boolean;
+  /** Listagens (`/chamados`, `/triagem`, resumo do dashboard) já trazem os nomes. */
+  solicitante?: ApiRef | null;
+  tecnico?: ApiRef | null;
+  grupo?: ApiRef | null;
+  categoria?: (ApiRef & { nome_pai: string | null }) | null;
+}
+
+export interface ApiRef {
+  id: number;
+  nome: string;
+}
+
+export interface ApiDashboardResumo {
+  kpis: {
+    abertos: number;
+    atribuidos_a_mim: number;
+    nao_atribuidos: number;
+    pendentes: number;
+    sla_critico: number;
+    sla_cumprido_pct: number | null;
+    sla_variacao_pct: number | null;
+    mttr_min: number | null;
+    media_por_tecnico: number | null;
+    resolvidos_hoje: number;
+    total_periodo: number;
+    csat: number | null;
+  };
+  por_status: Record<string, number>;
+  por_prioridade: Record<string, number>;
+  volume_diario: { dia: string; abertos: number; fechados: number }[];
+  categorias_top: { nome: string; total: number }[];
+  tecnicos: { id: number; nome: string; ativos: number; resolvidos_hoje: number; sla_pct: number | null }[];
+  ultimos_chamados: ApiChamado[];
+}
+
+export interface ApiRelatorioTma {
+  total_fechados: number;
+  variacao_pct: number | null;
+  tma_min: number | null;
+  tma_variacao_pct: number | null;
+  csat: number | null;
+  analistas: {
+    id: number;
+    nome: string;
+    departamento: string | null;
+    fechados: number;
+    tma_min: number | null;
+    reaberturas_pct: number | null;
+    sla_pct: number | null;
+    csat: number | null;
+    avaliacoes: number | null;
+  }[];
 }
 
 export interface ApiComentario {
@@ -158,6 +210,7 @@ export interface ApiAtivo {
   status: string;
   data_aquisicao: string | null;
   data_cadastro: string;
+  usuario_atribuido?: ApiRef | null;
 }
 
 export interface ApiArtigoKb {
@@ -174,6 +227,8 @@ export interface ApiArtigoKb {
   votos_nao_uteis?: number;
   /** `true` = útil, `false` = não útil, `null` = o usuário ainda não votou. */
   meu_voto?: boolean | null;
+  autor?: ApiRef | null;
+  categoria?: ApiRef | null;
 }
 
 export interface ApiCategoriaKb {
@@ -196,6 +251,12 @@ export interface ApiAprovacao {
   data_solicitacao: string;
   data_decisao?: string | null;
   justificativa_aprovador?: string | null;
+  titulo_chamado?: string | null;
+  titulo_mudanca?: string | null;
+  /** Prioridade do chamado ou o `tipo_mudanca` da mudança. */
+  prioridade?: string | null;
+  solicitante?: ApiRef | null;
+  aprovador?: ApiRef | null;
 }
 
 export interface ApiIntervalo {
@@ -234,6 +295,7 @@ export interface ApiProblema {
   data_identificacao: string;
   data_resolucao: string | null;
   chamados?: ApiVinculoItil[];
+  tecnico?: ApiRef | null;
 }
 
 export interface ApiMudanca {
@@ -251,6 +313,7 @@ export interface ApiMudanca {
   janela_fim: string;
   data_criacao: string;
   chamados?: ApiVinculoItil[];
+  solicitante?: ApiRef | null;
 }
 
 export interface ApiNotificacao {

@@ -1,6 +1,5 @@
 import { api } from '@/lib/api';
-import { byId, lookups } from '@/lib/backend/lookups';
-import type { ApiAtivo, ApiUsuario } from '@/lib/backend/types';
+import type { ApiAtivo } from '@/lib/backend/types';
 import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
@@ -35,7 +34,7 @@ const STATUS_PARA_API: Record<StatusAtivo, string> = { EM_USO: 'ATIVO', ESTOQUE:
 /** `yyyy-mm-dd` → ISO ao meio-dia UTC, para que o dia não mude em nenhum fuso do Brasil. */
 const dataParaIso = (dia: string) => `${dia}T12:00:00.000Z`;
 
-function toAtivo(a: ApiAtivo, usuarios: Map<number, ApiUsuario>): Ativo {
+function toAtivo(a: ApiAtivo): Ativo {
   return {
     id: a.id,
     codigo: a.codigo_patrimonio,
@@ -43,7 +42,7 @@ function toAtivo(a: ApiAtivo, usuarios: Map<number, ApiUsuario>): Ativo {
     tipo: TIPO_DA_API[a.tipo_ativo] ?? 'OUTRO',
     numeroSerie: null,
     responsavelId: a.id_usuario_atribuido,
-    responsavelNome: a.id_usuario_atribuido ? (usuarios.get(a.id_usuario_atribuido)?.nome ?? `Usuário #${a.id_usuario_atribuido}`) : null,
+    responsavelNome: a.id_usuario_atribuido ? (a.usuario_atribuido?.nome ?? `Usuário #${a.id_usuario_atribuido}`) : null,
     status: STATUS_DA_API[a.status] ?? 'ESTOQUE',
     localizacao: null,
     fabricante: null,
@@ -54,11 +53,7 @@ function toAtivo(a: ApiAtivo, usuarios: Map<number, ApiUsuario>): Ativo {
   };
 }
 
-async function fetchAtivos() {
-  const [rows, usuarios] = await Promise.all([getAll<ApiAtivo>('/ativos', TETO_PAGINA.ativos), lookups.usuarios()]);
-  const users = byId(usuarios);
-  return rows.map((r) => toAtivo(r, users));
-}
+const fetchAtivos = async () => (await getAll<ApiAtivo>('/ativos', TETO_PAGINA.ativos)).map(toAtivo);
 
 export function resumirAtivos(todos: Ativo[]): AtivosResumo {
   const porTipo = Object.fromEntries(Object.keys(TIPO_PARA_API).map((t) => [t, 0])) as Record<TipoAtivo, number>;

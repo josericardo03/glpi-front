@@ -11,6 +11,8 @@ const COLUMNS: StatusChamado[] = ['NOVO', 'EM_ATENDIMENTO', 'PENDENTE', 'RESOLVI
 
 interface KanbanBoardProps {
   chamados: Chamado[];
+  /** Total de cada status no filtro, quando a coluna mostra só parte dos chamados. */
+  totais?: Record<StatusChamado, number>;
   onMove: (id: number, status: StatusChamado) => void;
 }
 
@@ -43,7 +45,7 @@ const KanbanCard = memo(function KanbanCard({ c }: { c: Chamado }) {
 });
 
 /** Kanban drag-and-drop com HTML5 DnD nativo (sem bibliotecas extras). */
-export function KanbanBoard({ chamados, onMove }: KanbanBoardProps) {
+export function KanbanBoard({ chamados, totais, onMove }: KanbanBoardProps) {
   const [over, setOver] = useState<StatusChamado | null>(null);
   const grouped = useMemo(() => {
     const g = Object.fromEntries(COLUMNS.map((s) => [s, [] as Chamado[]])) as Record<StatusChamado, Chamado[]>;
@@ -61,7 +63,10 @@ export function KanbanBoard({ chamados, onMove }: KanbanBoardProps) {
 
   return (
     <div className="grid auto-cols-[minmax(260px,1fr)] grid-flow-col gap-4 overflow-x-auto pb-2">
-      {COLUMNS.map((s) => (
+      {COLUMNS.map((s) => {
+        const total = Math.max(totais?.[s] ?? 0, grouped[s].length);
+        const ocultos = total - grouped[s].length;
+        return (
         <section
           key={s}
           onDragOver={(e) => {
@@ -75,15 +80,17 @@ export function KanbanBoard({ chamados, onMove }: KanbanBoardProps) {
         >
           <header className="mb-3 flex items-center justify-between px-1">
             <h3 className="text-xs font-bold uppercase tracking-wide text-brand-darker">{STATUS_META[s].label}</h3>
-            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-brand-muted">{grouped[s].length}</span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-brand-muted">{total}</span>
           </header>
           <div className="flex flex-1 flex-col gap-2.5">
             {grouped[s].map((c) => (
               <KanbanCard key={c.id} c={c} />
             ))}
+            {ocultos > 0 && <p className="px-1 text-center text-[11px] text-brand-muted">+{ocultos} não exibidos — refine os filtros ou use a lista.</p>}
           </div>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

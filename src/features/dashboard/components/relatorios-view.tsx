@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Download, FileDown, Star, Ticket } from 'lucide-react';
 import {
   Avatar,
@@ -23,7 +23,7 @@ import {
 import { getErrorMessage } from '@/lib/api';
 import { exportCsv } from '@/lib/csv';
 import { formatMinutes, formatNumber } from '@/lib/format';
-import { paginate } from '@/lib/http';
+import { useAjustarPagina } from '@/hooks/use-filters';
 import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import { chamadoColumns } from '@/features/chamados/components/chamado-columns';
@@ -34,23 +34,26 @@ import { useDashboardResumo, useRelatorioTma } from '../use-dashboard';
 
 type Analista = RelatorioTma['analistas'][number];
 
-const PERIODO_LABEL: Record<Periodo, string> = { '30d': 'Últimos 30 dias', trimestre: 'Trimestre', ano: 'Ano' };
+const PERIODO_LABEL: Record<Periodo, string> = { '7d': 'Últimos 7 dias', '30d': 'Últimos 30 dias', '90d': 'Últimos 90 dias' };
 
 const matrizColumns: Column<Analista>[] = [
   { key: 'nome', header: 'Técnico', cell: (a) => <span className="font-semibold">{a.nome}</span> },
   { key: 'dep', header: 'Departamento', cell: (a) => a.departamento },
   { key: 'fechados', header: 'Fechados', align: 'right', cell: (a) => formatNumber(a.fechados) },
-  { key: 'tma', header: 'Média Tempo (TMA)', cell: (a) => formatMinutes(a.tmaMin) },
+  { key: 'tma', header: 'Média Tempo (TMA)', cell: (a) => (a.tmaMin === null ? '—' : formatMinutes(a.tmaMin)) },
   ...(recursos.satisfacao ? [{ key: 'reab', header: 'Reaberturas', cell: (a: Analista) => (a.reaberturasPct === null ? '—' : `${a.reaberturasPct}%`) }] : []),
   {
     key: 'sla',
     header: 'SLA Cumprido',
-    cell: (a) => (
-      <div className="flex items-center gap-2">
-        <Progress value={a.slaPct} tone={a.slaPct >= 95 ? 'success' : 'warning'} className="w-20" label={`SLA de ${a.nome}`} />
-        <span className="text-xs">{a.slaPct}%</span>
-      </div>
-    ),
+    cell: (a) =>
+      a.slaPct === null ? (
+        '—'
+      ) : (
+        <div className="flex items-center gap-2">
+          <Progress value={a.slaPct} tone={a.slaPct >= 95 ? 'success' : 'warning'} className="w-20" label={`SLA de ${a.nome}`} />
+          <span className="text-xs">{a.slaPct}%</span>
+        </div>
+      ),
   },
   ...(recursos.satisfacao
     ? [{ key: 'efic', header: 'Eficiência', align: 'right' as const, cell: (a: Analista) => <strong>{a.eficienciaPct === null ? '—' : `${a.eficienciaPct}%`}</strong> }]
@@ -71,8 +74,9 @@ export function RelatoriosView() {
   const [page, setPage] = useState(1);
   const tma = useRelatorioTma(periodo);
   const resumo = useDashboardResumo(periodo);
-  const incidentes = useChamados({ tipo: 'INCIDENTE' });
-  const pagina = useMemo(() => (incidentes.data ? paginate(incidentes.data, page, PAGE_SIZE) : undefined), [incidentes.data, page]);
+  const incidentes = useChamados({ tipo: 'INCIDENTE', page, pageSize: PAGE_SIZE });
+  const pagina = incidentes.data;
+  useAjustarPagina(pagina, setPage);
 
   const t = tma.data;
   const r = resumo.data;
@@ -224,7 +228,7 @@ export function RelatoriosView() {
                       { header: 'Técnico', value: (a) => a.nome },
                       { header: 'Departamento', value: (a) => a.departamento },
                       { header: 'Fechados', value: (a) => a.fechados },
-                      { header: 'TMA (min)', value: (a) => Math.round(a.tmaMin) },
+                      { header: 'TMA (min)', value: (a) => (a.tmaMin === null ? null : Math.round(a.tmaMin)) },
                       { header: 'SLA %', value: (a) => a.slaPct },
                       ...(recursos.satisfacao
                         ? [

@@ -39,13 +39,19 @@ export interface Chamado {
   itensConfiguracao?: { id: ID; nome: string; detalhe: string }[];
 }
 
+/** Aplicados pela API (`GET /chamados` e `/triagem`); `search` procura no título, na descrição e no número. */
 export interface ChamadoFiltros extends PageParams {
   status?: StatusChamado | '';
+  /** Vários status de uma vez (ignorado quando `status` está preenchido). */
+  statusIn?: StatusChamado[];
   prioridade?: Prioridade | '';
   tipo?: TipoChamado | '';
   categoriaId?: ID | '';
-  tecnicoId?: ID | '';
+  /** `'sem'` filtra os chamados sem técnico. */
+  tecnicoId?: ID | 'sem' | '';
   grupoId?: ID | '';
+  slaVencido?: boolean;
+  ordenar?: `${'data_abertura' | 'prioridade' | 'status' | 'id' | 'data_resolucao'}:${'asc' | 'desc'}`;
 }
 
 export interface ChamadoInput {

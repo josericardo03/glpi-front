@@ -5,8 +5,9 @@ import { Button, Field, Modal, Select, Textarea, ToggleGroup } from '@/component
 import { useAuth } from '@/features/auth/auth-provider';
 import { useUsuarios } from '@/features/cadastros/use-cadastros';
 import { useChamados } from '@/features/chamados/hooks/use-chamados';
-import { isFinalizado } from '@/features/chamados/components/chamado-badges';
+import { STATUS_ABERTOS } from '@/features/chamados/components/chamado-badges';
 import { PAPEL_LABEL, perfilPrincipal } from '@/lib/backend/usuario.mapper';
+import { TETO_PAGINA } from '@/lib/http';
 import { textoInvalido } from '@/lib/validation';
 import { useMudancas } from '@/features/itil/use-itil';
 import type { AprovacaoInput } from '@/types';
@@ -39,7 +40,7 @@ function SolicitarAprovacaoConteudo({ open, onClose, chamadoId, mudancaId }: Pro
 
   const fixo = chamadoId !== undefined || mudancaId !== undefined;
   const { data: usuarios } = useUsuarios();
-  const { data: chamados } = useChamados({}, !fixo && origem === 'CHAMADO');
+  const { data: chamados } = useChamados({ statusIn: STATUS_ABERTOS, page: 1, pageSize: TETO_PAGINA.chamados }, !fixo && origem === 'CHAMADO');
   const { data: mudancas } = useMudancas(open && !fixo && origem === 'MUDANCA');
 
   const aprovadores = useMemo(
@@ -53,7 +54,7 @@ function SolicitarAprovacaoConteudo({ open, onClose, chamadoId, mudancaId }: Pro
   const alvos = useMemo(
     () =>
       origem === 'CHAMADO'
-        ? (chamados ?? []).filter((c) => !isFinalizado(c.status)).map((c) => ({ value: c.id, label: `#${c.id} · ${c.titulo}` }))
+        ? (chamados?.data ?? []).map((c) => ({ value: c.id, label: `#${c.id} · ${c.titulo}` }))
         : (mudancas ?? []).map((m) => ({ value: m.id, label: `#${m.id} · ${m.titulo}` })),
     [origem, chamados, mudancas],
   );

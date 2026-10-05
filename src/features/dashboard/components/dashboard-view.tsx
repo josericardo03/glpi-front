@@ -95,7 +95,14 @@ export function DashboardView() {
         <StatCard label="Atribuídos a Mim" value={k?.atribuidosAMim} icon={<UserRound className="h-5 w-5" />} tone="primary" loading={isLoading} />
         <StatCard label="Sem Técnico" value={k?.naoAtribuidos} icon={<UserX className="h-5 w-5" />} loading={isLoading} />
         <StatCard label="Pendentes" value={k?.pendentes} icon={<Hourglass className="h-5 w-5" />} tone="warning" loading={isLoading} />
-        <StatCard label="SLA Crítico" value={k?.slaCritico} icon={<AlertTriangle className="h-5 w-5" />} tone="danger" loading={isLoading} />
+        <StatCard
+          label="SLA Crítico"
+          value={k?.slaCritico}
+          icon={<AlertTriangle className="h-5 w-5" />}
+          tone="danger"
+          loading={isLoading}
+          footer="Vencidos ou vencendo em até 4h"
+        />
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -115,15 +122,7 @@ export function DashboardView() {
           value={k && (k.mttrMin === null ? '—' : formatMinutes(k.mttrMin))}
           icon={<Timer className="h-5 w-5" />}
           loading={isLoading}
-          footer={
-            k?.mttrMin == null || k.mttrMetaMin == null ? (
-              'Sem base de comparação com a meta.'
-            ) : k.mttrMin > k.mttrMetaMin ? (
-              <span className="font-medium text-status-critica">{formatMinutes(k.mttrMin - k.mttrMetaMin)} acima da meta</span>
-            ) : (
-              <span className="font-medium text-emerald-600">{formatMinutes(k.mttrMetaMin - k.mttrMin)} abaixo da meta</span>
-            )
-          }
+          footer={k?.mttrMin === null ? 'Nenhum chamado resolvido no período.' : 'Chamados resolvidos nos últimos 30 dias'}
         />
         <StatCard
           label="Média Tickets / Técnico"

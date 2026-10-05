@@ -39,18 +39,38 @@ export const TETO_PAGINA = {
 
 const MAX_PAGINAS = 50;
 
+const headerTotal = (r: AxiosResponse<unknown[]>) => {
+  const valor = r.headers['x-total-count'];
+  const total = Number(valor);
+  return valor != null && Number.isFinite(total) ? total : null;
+};
+const totalDoHeader = (r: AxiosResponse<unknown[]>) => headerTotal(r) ?? r.data.length;
+
 /**
  * Telas que filtram e paginam no cliente precisam da lista inteira, então percorremos
- * `pagina`/`limite` até vir uma página incompleta. O teto de páginas evita laço infinito.
+ * `pagina`/`limite` até atingir o `X-Total-Count` (ou vir uma página incompleta).
+ * O teto de páginas evita laço infinito.
  */
 export async function getAll<T>(url: string, limite: number, params?: Record<string, unknown>, maxPaginas = MAX_PAGINAS): Promise<T[]> {
   const itens: T[] = [];
   for (let pagina = 1; pagina <= maxPaginas; pagina++) {
-    const lote = await data(api.get<T[]>(url, { params: { ...params, pagina, limite } }));
-    itens.push(...lote);
-    if (lote.length < limite) break;
+    const r = await api.get<T[]>(url, { params: { ...params, pagina, limite } });
+    itens.push(...r.data);
+    const total = headerTotal(r);
+    if (r.data.length < limite || (total !== null && itens.length >= total)) break;
   }
   return itens;
+}
+
+/** Uma página filtrada pela API; o total do filtro vem no header `X-Total-Count`. */
+export async function getPagina<T>(url: string, params: Record<string, unknown>, page: number, pageSize: number): Promise<Paginated<T>> {
+  const r = await api.get<T[]>(url, { params: { ...params, pagina: page, limite: pageSize } });
+  return { data: r.data, total: totalDoHeader(r), page, pageSize };
+}
+
+/** Só a contagem de um filtro (`limite=1`, lendo `X-Total-Count`). */
+export async function contar(url: string, params: Record<string, unknown>): Promise<number> {
+  return totalDoHeader(await api.get<unknown[]>(url, { params: { ...params, pagina: 1, limite: 1 } }));
 }
 
 /** Página fora do intervalo (ex.: lista encolheu após uma mutação) é ajustada para a última existente. */

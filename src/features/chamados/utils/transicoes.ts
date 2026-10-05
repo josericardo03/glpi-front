@@ -24,7 +24,10 @@ export const TRANSICOES: Record<StatusChamado, StatusChamado[]> = {
   CONCLUIDO: [],
 };
 
-export const isFinalizado = (status: StatusChamado) => status === 'RESOLVIDO' || status === 'CONCLUIDO';
+export const STATUS_ABERTOS: StatusChamado[] = ['NOVO', 'EM_ATENDIMENTO', 'PENDENTE'];
+export const STATUS_FINALIZADOS: StatusChamado[] = ['RESOLVIDO', 'CONCLUIDO'];
+
+export const isFinalizado = (status: StatusChamado) => STATUS_FINALIZADOS.includes(status);
 
 /** Destinos válidos para todos os status informados (ações em lote). */
 export function transicoesComuns(statuses: StatusChamado[]): StatusChamado[] {

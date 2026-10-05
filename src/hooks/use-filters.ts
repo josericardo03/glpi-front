@@ -15,6 +15,15 @@ export function useFilters<T extends { page?: number }>(initial: T) {
   return { filters, setFilter, setFilters, reset };
 }
 
+/** Paginação no servidor: se a lista encolher (ex.: após uma mutação), volta para a última página existente. */
+export function useAjustarPagina(pagina: { page: number; pageSize: number; total: number } | undefined, setPage: (p: number) => void) {
+  const ultima = pagina ? Math.max(1, Math.ceil(pagina.total / pagina.pageSize)) : 1;
+  const fora = !!pagina && pagina.page > ultima;
+  useEffect(() => {
+    if (fora) setPage(ultima);
+  }, [fora, ultima, setPage]);
+}
+
 export function useDebounce<T>(value: T, delay = 350) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {

@@ -11,7 +11,6 @@ export interface DashboardResumo {
     slaCumpridoPct: number | null;
     slaVariacaoPct: number | null;
     mttrMin: number | null;
-    mttrMetaMin: number | null;
     mediaPorTecnico: number | null;
     resolvidosHoje: number;
     /** Chamados abertos dentro do período selecionado. */
@@ -41,9 +40,9 @@ export interface RelatorioTma {
     nome: string;
     departamento: string;
     fechados: number;
-    tmaMin: number;
+    tmaMin: number | null;
     reaberturasPct: number | null;
-    slaPct: number;
+    slaPct: number | null;
     eficienciaPct: number | null;
     csat: number | null;
     avaliacoes: number | null;

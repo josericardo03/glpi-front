@@ -1,7 +1,4 @@
-import { api } from '@/lib/api';
 import { byId, lookups } from '@/lib/backend/lookups';
-import { getAll, TETO_PAGINA } from '@/lib/http';
-import { queryClient } from '@/lib/query-client';
 import { PAPEL_LABEL } from '@/lib/backend/usuario.mapper';
 import type { ApiCategoria, ApiChamado, ApiChamadoDetalhe, ApiGrupo, ApiUsuario } from '@/lib/backend/types';
 import type { Chamado, ChamadoDetalhe, HistoricoEvento, MotivoPausa, Nivel, Origem, Prioridade, StatusChamado, TipoChamado } from '@/types';
@@ -18,19 +15,6 @@ export async function loadCtx(): Promise<ChamadoCtx> {
   return { usuarios: byId(usuarios), categorias: byId(categorias), grupos: byId(grupos) };
 }
 
-/**
- * GET /chamados compartilhado entre fila, dashboard, relatórios e aprovações.
- * A chave fica sob ['chamados'], então as mutações de chamado também a invalidam.
- */
-export const chamadosApi = () =>
-  queryClient.fetchQuery({ queryKey: ['chamados', 'raw'], queryFn: () => getAll<ApiChamado>('/chamados', TETO_PAGINA.chamados), staleTime: 15_000 });
-
-/** Chamados já mapeados para o modelo da interface. */
-export async function listarChamados(): Promise<Chamado[]> {
-  const [rows, ctx] = await Promise.all([chamadosApi(), loadCtx()]);
-  return rows.map((r) => toChamado(r, ctx));
-}
-
 /** A API não persiste impacto/urgência; são inferidos da prioridade para a matriz ITIL. */
 const NIVEIS: Record<Prioridade, [Nivel, Nivel]> = {
   CRITICA: ['ALTO', 'ALTO'],
@@ -39,14 +23,16 @@ const NIVEIS: Record<Prioridade, [Nivel, Nivel]> = {
   BAIXA: ['BAIXO', 'BAIXO'],
 };
 
-function categoriaNome(id: number, cats: ChamadoCtx['categorias']) {
-  const c = cats.get(id);
-  if (!c) return `Categoria #${id}`;
-  const pai = c.id_categoria_pai ? cats.get(c.id_categoria_pai) : undefined;
-  return pai ? `${pai.nome} / ${c.nome}` : c.nome;
+function categoriaNome(c: ApiChamado, ctx?: ChamadoCtx) {
+  if (c.categoria) return c.categoria.nome_pai ? `${c.categoria.nome_pai} / ${c.categoria.nome}` : c.categoria.nome;
+  const cat = ctx?.categorias.get(c.id_categoria);
+  if (!cat) return `Categoria #${c.id_categoria}`;
+  const pai = cat.id_categoria_pai ? ctx!.categorias.get(cat.id_categoria_pai) : undefined;
+  return pai ? `${pai.nome} / ${cat.nome}` : cat.nome;
 }
 
-export function toChamado(c: ApiChamado, ctx: ChamadoCtx): Chamado {
+/** Listagens já trazem os nomes; o contexto de lookups só é necessário no detalhe. */
+export function toChamado(c: ApiChamado, ctx?: ChamadoCtx): Chamado {
   const prioridade = c.prioridade as Prioridade;
   const [impacto, urgencia] = NIVEIS[prioridade] ?? ['MEDIO', 'MEDIO'];
   const abertura = new Date(c.data_abertura).getTime();
@@ -68,13 +54,13 @@ export function toChamado(c: ApiChamado, ctx: ChamadoCtx): Chamado {
     impacto,
     urgencia,
     categoriaId: c.id_categoria,
-    categoriaNome: categoriaNome(c.id_categoria, ctx.categorias),
+    categoriaNome: categoriaNome(c, ctx),
     solicitanteId: c.id_solicitante,
-    solicitanteNome: ctx.usuarios.get(c.id_solicitante)?.nome ?? `Usuário #${c.id_solicitante}`,
+    solicitanteNome: c.solicitante?.nome ?? ctx?.usuarios.get(c.id_solicitante)?.nome ?? `Usuário #${c.id_solicitante}`,
     grupoId: c.id_grupo_responsavel,
-    grupoNome: c.id_grupo_responsavel ? (ctx.grupos.get(c.id_grupo_responsavel)?.nome ?? null) : null,
+    grupoNome: c.id_grupo_responsavel ? (c.grupo?.nome ?? ctx?.grupos.get(c.id_grupo_responsavel)?.nome ?? null) : null,
     tecnicoId: c.id_tecnico_atribuido,
-    tecnicoNome: c.id_tecnico_atribuido ? (ctx.usuarios.get(c.id_tecnico_atribuido)?.nome ?? null) : null,
+    tecnicoNome: c.id_tecnico_atribuido ? (c.tecnico?.nome ?? ctx?.usuarios.get(c.id_tecnico_atribuido)?.nome ?? null) : null,
     abertoEm: c.data_abertura,
     atualizadoEm: atualizado,
     prazoResposta: c.data_previsao_resposta ?? null,

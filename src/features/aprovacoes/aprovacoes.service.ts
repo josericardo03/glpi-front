@@ -1,8 +1,6 @@
 import { api } from '@/lib/api';
-import { byId, lookups, perfilAtualAtinge } from '@/lib/backend/lookups';
-import type { ApiAprovacao, ApiChamado, ApiMudanca } from '@/lib/backend/types';
+import type { ApiAprovacao } from '@/lib/backend/types';
 import { data, getAll, request, TETO_PAGINA } from '@/lib/http';
-import { chamadosApi } from '@/features/chamados/services/chamado.mapper';
 import * as db from '@/mocks/db';
 import type { Aprovacao, AprovacaoInput, DecisaoInput, FiltroStatusAprovacao, Prioridade } from '@/types';
 
@@ -16,44 +14,35 @@ const FILTRO_MOCK: Record<FiltroStatusAprovacao, Aprovacao['status'] | null> = {
   TODOS: null,
 };
 
-/**
- * GET /aprovacoes?status=: todas do tenant para técnicos e gestores, só as próprias para o solicitante.
- * Chamados e mudanças só enriquecem o título.
- */
-async function listaReal(filtro: FiltroStatusAprovacao): Promise<Aprovacao[]> {
-  const [rows, chamados, mudancas, usuarios] = await Promise.all([
-    getAll<ApiAprovacao>('/aprovacoes', TETO_PAGINA.aprovacoes, { status: filtro }),
-    chamadosApi().catch(() => [] as ApiChamado[]),
-    perfilAtualAtinge('TECNICO') ? getAll<ApiMudanca>('/mudancas', TETO_PAGINA.mudancas).catch(() => [] as ApiMudanca[]) : ([] as ApiMudanca[]),
-    lookups.usuarios(),
-  ]);
-  const cs = byId(chamados);
-  const ms = byId(mudancas);
-  const us = byId(usuarios);
+const PRIORIDADES = new Set<string>(['CRITICA', 'ALTA', 'MEDIA', 'BAIXA']);
 
+/** A API devolve a prioridade do chamado ou, para mudanças, o `tipo_mudanca`. */
+const prioridadeDe = (a: ApiAprovacao): Prioridade =>
+  a.prioridade && PRIORIDADES.has(a.prioridade) ? (a.prioridade as Prioridade) : (PRIORIDADE_POR_TIPO_MUDANCA[a.prioridade ?? ''] ?? 'MEDIA');
+
+/** GET /aprovacoes?status=: todas do tenant para técnicos e gestores, só as próprias para o solicitante. */
+async function listaReal(filtro: FiltroStatusAprovacao): Promise<Aprovacao[]> {
+  const rows = await getAll<ApiAprovacao>('/aprovacoes', TETO_PAGINA.aprovacoes, { status: filtro });
   return rows
-    .map((a): Aprovacao => {
-      const chamado = a.id_chamado ? cs.get(a.id_chamado) : undefined;
-      const mudanca = a.id_mudanca ? ms.get(a.id_mudanca) : undefined;
-      const prioridade = chamado ? (chamado.prioridade as Prioridade) : (PRIORIDADE_POR_TIPO_MUDANCA[mudanca?.tipo_mudanca ?? ''] ?? 'MEDIA');
-      return {
+    .map(
+      (a): Aprovacao => ({
         id: a.id,
-        titulo: chamado?.titulo ?? mudanca?.titulo ?? (a.id_chamado ? `Chamado #${a.id_chamado}` : `Mudança #${a.id_mudanca}`),
+        titulo: a.titulo_chamado ?? a.titulo_mudanca ?? (a.id_chamado ? `Chamado #${a.id_chamado}` : `Mudança #${a.id_mudanca}`),
         descricao: a.descricao,
         origem: a.id_chamado ? 'CHAMADO' : 'MUDANCA',
         chamadoId: a.id_chamado,
         mudancaId: a.id_mudanca,
-        solicitanteNome: us.get(a.id_solicitante)?.nome ?? `Usuário #${a.id_solicitante}`,
-        aprovadorNome: us.get(a.id_aprovador)?.nome ?? `Usuário #${a.id_aprovador}`,
-        prioridade,
+        solicitanteNome: a.solicitante?.nome ?? `Usuário #${a.id_solicitante}`,
+        aprovadorNome: a.aprovador?.nome ?? `Usuário #${a.id_aprovador}`,
+        prioridade: prioridadeDe(a),
         risco: null,
         custoEstimado: null,
         solicitadoEm: a.data_solicitacao,
         status: STATUS_DA_API[a.status] ?? 'PENDENTE',
         decididoEm: a.data_decisao ?? null,
         justificativaAprovador: a.justificativa_aprovador ?? null,
-      };
-    })
+      }),
+    )
     .sort(ordenar);
 }
 

@@ -41,9 +41,10 @@ const categoriasApi = () =>
     staleTime: 60_000,
   });
 
-function toArtigo(a: ApiArtigoKb, usuarios: Map<number, ApiUsuario>, categorias: Map<number, ApiCategoriaKb>): KbArtigo {
+/** Listagens trazem autor e categoria embutidos; o detalhe usa os lookups (e o cargo do autor). */
+function toArtigo(a: ApiArtigoKb, ctx?: { usuarios: Map<number, ApiUsuario>; categorias: Map<number, ApiCategoriaKb> }): KbArtigo {
   const texto = textoPlano(a.conteudo);
-  const autor = usuarios.get(a.id_autor);
+  const autor = ctx?.usuarios.get(a.id_autor);
   const meu = a.id_autor === currentUserId();
   return {
     id: a.id,
@@ -51,10 +52,10 @@ function toArtigo(a: ApiArtigoKb, usuarios: Map<number, ApiUsuario>, categorias:
     resumo: resumir(texto),
     conteudoMarkdown: a.conteudo,
     categoriaId: a.id_categoria,
-    categoriaNome: categorias.get(a.id_categoria)?.nome ?? `Categoria ${a.id_categoria}`,
+    categoriaNome: a.categoria?.nome ?? ctx?.categorias.get(a.id_categoria)?.nome ?? `Categoria ${a.id_categoria}`,
     status: a.status as StatusArtigoKb,
     autorId: a.id_autor,
-    autorNome: autor?.nome ?? (meu ? 'Você' : `Usuário #${a.id_autor}`),
+    autorNome: a.autor?.nome ?? autor?.nome ?? (meu ? 'Você' : `Usuário #${a.id_autor}`),
     autorCargo: autor?.cargo ?? '',
     visualizacoes: a.visualizacoes,
     votosUteis: a.votos_uteis ?? 0,
@@ -71,10 +72,8 @@ async function contexto() {
   return { usuarios: byId(usuarios), categorias: byId(categorias) };
 }
 
-async function fetchArtigos(params?: Record<string, string>): Promise<KbArtigo[]> {
-  const [rows, ctx] = await Promise.all([getAll<ApiArtigoKb>('/artigos-kb', TETO_PAGINA.artigos, params), contexto()]);
-  return rows.map((a) => toArtigo(a, ctx.usuarios, ctx.categorias));
-}
+const fetchArtigos = async (params?: Record<string, string>): Promise<KbArtigo[]> =>
+  (await getAll<ApiArtigoKb>('/artigos-kb', TETO_PAGINA.artigos, params)).map((a) => toArtigo(a));
 
 export function filtrarArtigos(rows: KbArtigo[], f: ArtigosFiltros): KbArtigoResumo[] {
   return rows
@@ -128,7 +127,7 @@ export const kbService = {
     request<KbArtigo>(
       async () => {
         const [row, ctx] = await Promise.all([data(api.get<ApiArtigoKb>(`/artigos-kb/${id}`)), contexto()]);
-        return toArtigo(row, ctx.usuarios, ctx.categorias);
+        return toArtigo(row, ctx);
       },
       () => ({ ...acharMock(id) }),
     ),

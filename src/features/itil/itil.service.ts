@@ -19,10 +19,12 @@ import type {
   VinculoItil,
 } from '@/types';
 
-const nomeUsuario = (usuarios: Map<number, { nome: string }>, id: number) => usuarios.get(id)?.nome ?? `Usuário #${id}`;
+/** Listagens trazem o nome embutido; os detalhes dependem do lookup de usuários. */
+const nomeUsuario = (id: number, embutido?: { nome: string } | null, usuarios?: Map<number, { nome: string }>) =>
+  embutido?.nome ?? usuarios?.get(id)?.nome ?? `Usuário #${id}`;
 const texto = (v?: string) => v?.trim() || undefined;
 
-function toProblema(p: ApiProblema, us: Map<number, ApiUsuario>): Problema {
+function toProblema(p: ApiProblema, us?: Map<number, ApiUsuario>): Problema {
   return {
     id: p.id,
     titulo: p.titulo,
@@ -32,13 +34,13 @@ function toProblema(p: ApiProblema, us: Map<number, ApiUsuario>): Problema {
     causaRaiz: p.causa_raiz,
     solucaoContorno: p.solucao_contorno,
     tecnicoId: p.id_tecnico_atribuido,
-    tecnicoNome: p.id_tecnico_atribuido ? nomeUsuario(us, p.id_tecnico_atribuido) : null,
+    tecnicoNome: p.id_tecnico_atribuido ? nomeUsuario(p.id_tecnico_atribuido, p.tecnico, us) : null,
     identificadoEm: p.data_identificacao,
     resolvidoEm: p.data_resolucao,
   };
 }
 
-function toMudanca(m: ApiMudanca, us: Map<number, ApiUsuario>): Mudanca {
+function toMudanca(m: ApiMudanca, us?: Map<number, ApiUsuario>): Mudanca {
   return {
     id: m.id,
     titulo: m.titulo,
@@ -49,7 +51,7 @@ function toMudanca(m: ApiMudanca, us: Map<number, ApiUsuario>): Mudanca {
     planoRetorno: m.plano_retorno,
     tipo: m.tipo_mudanca as TipoMudanca,
     status: m.status as StatusMudanca,
-    solicitanteNome: nomeUsuario(us, m.id_solicitante),
+    solicitanteNome: nomeUsuario(m.id_solicitante, m.solicitante, us),
     janelaInicio: m.janela_inicio,
     janelaFim: m.janela_fim,
     criadaEm: m.data_criacao,
@@ -79,11 +81,7 @@ const acharMudanca = (id: number) => {
 export const problemasService = {
   list: () =>
     request<Problema[]>(
-      async () => {
-        const [rows, usuarios] = await Promise.all([getAll<ApiProblema>('/problemas', TETO_PAGINA.problemas), lookups.usuarios()]);
-        const us = byId(usuarios);
-        return rows.map((p) => toProblema(p, us)).sort(problemasRecentes);
-      },
+      async () => (await getAll<ApiProblema>('/problemas', TETO_PAGINA.problemas)).map((p) => toProblema(p)).sort(problemasRecentes),
       () => [...db.problemas].sort(problemasRecentes),
     ),
 
@@ -162,11 +160,7 @@ export const problemasService = {
 export const mudancasService = {
   list: () =>
     request<Mudanca[]>(
-      async () => {
-        const [rows, usuarios] = await Promise.all([getAll<ApiMudanca>('/mudancas', TETO_PAGINA.mudancas), lookups.usuarios()]);
-        const us = byId(usuarios);
-        return rows.map((m) => toMudanca(m, us)).sort(mudancasRecentes);
-      },
+      async () => (await getAll<ApiMudanca>('/mudancas', TETO_PAGINA.mudancas)).map((m) => toMudanca(m)).sort(mudancasRecentes),
       () => [...db.mudancas].sort(mudancasRecentes),
     ),
 

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlarmClock, AlertOctagon, CheckCheck, Download, KanbanSquare, List, Plus, Ticket } from 'lucide-react';
 import {
   Button,
@@ -19,20 +19,22 @@ import {
   ToggleGroup,
   useToast,
 } from '@/components/ui';
-import { useDebounce, useFilters } from '@/hooks/use-filters';
+import { useAjustarPagina, useDebounce, useFilters } from '@/hooks/use-filters';
 import { exportCsv } from '@/lib/csv';
 import { getErrorMessage } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
-import { paginate } from '@/lib/http';
 import type { ChamadoFiltros, StatusChamado } from '@/types';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useCategoriaOptions, useTecnicoOptions } from '@/features/cadastros/use-cadastros';
-import { useAtualizarStatus, useChamados } from '../hooks/use-chamados';
-import { isFinalizado, PRIORIDADE_META, PRIORIDADE_OPTIONS, slaVencido, STATUS_META, STATUS_OPTIONS, TRANSICOES } from './chamado-badges';
+import { useAtualizarStatus, useChamados, useIndicadoresFila, useKanbanChamados } from '../hooks/use-chamados';
+import { chamadosService } from '../services/chamados.service';
+import { PRIORIDADE_META, PRIORIDADE_OPTIONS, STATUS_META, STATUS_OPTIONS, TRANSICOES } from './chamado-badges';
 import { chamadoColumns } from './chamado-columns';
 import { KanbanBoard } from './kanban-board';
 
 const columns = chamadoColumns(['id', 'assunto', 'solicitante', 'tecnico', 'prioridade', 'status', 'slaCompact', 'ver']);
+
+const semPagina = ({ page: _p, pageSize: _s, ...f }: ChamadoFiltros) => f;
 
 export function FilaGlobalView() {
   const router = useRouter();
@@ -43,8 +45,14 @@ export function FilaGlobalView() {
   const { filters, setFilter, reset } = useFilters(initial);
   const search = useDebounce(filters.search);
 
-  const { data: rows, isLoading, isError, error, refetch } = useChamados({ ...filters, search });
-  const pagina = useMemo(() => (rows ? paginate(rows, filters.page, filters.pageSize) : undefined), [rows, filters.page, filters.pageSize]);
+  const filtros = { ...filters, search };
+  const lista = useChamados(filtros, view === 'lista');
+  const kanban = useKanbanChamados(filtros, view === 'kanban');
+  const indicadores = useIndicadoresFila(filtros);
+  const { isLoading, isError, error, refetch } = view === 'kanban' ? kanban : lista;
+  const pagina = lista.data;
+  useAjustarPagina(pagina, useCallback((p: number) => setFilter('page', p), [setFilter]));
+  const [exportando, setExportando] = useState(false);
   const categorias = useCategoriaOptions();
   const tecnicos = useTecnicoOptions();
   const { mutate: mover } = useAtualizarStatus();
@@ -58,7 +66,7 @@ export function FilaGlobalView() {
   const onMove = useCallback(
     (id: number, status: StatusChamado) => {
       if (!podeMover) return toast.error('Somente técnicos podem alterar o status dos chamados.');
-      const atual = rows?.find((c) => c.id === id)?.status;
+      const atual = kanban.data?.chamados.find((c) => c.id === id)?.status;
       if (!atual) return;
       if (!TRANSICOES[atual].includes(status)) {
         return toast.error(`Transição não permitida: ${STATUS_META[atual].label} → ${STATUS_META[status].label}.`);
@@ -69,20 +77,11 @@ export function FilaGlobalView() {
       }
       mover({ id, input: { status } });
     },
-    [rows, mover, router, toast, podeMover],
+    [kanban.data, mover, router, toast, podeMover],
   );
 
-  const stats = useMemo(() => {
-    const todos = rows ?? [];
-    const abertos = todos.filter((c) => !isFinalizado(c.status));
-    const comSla = abertos.filter((c) => c.slaRestanteMin !== null);
-    return {
-      pendentes: abertos.length,
-      noPrazo: comSla.length ? `${((comSla.filter((c) => !slaVencido(c)).length / comSla.length) * 100).toFixed(1)}%` : '—',
-      vencidos: abertos.filter(slaVencido).length,
-      resolvidos: todos.length - abertos.length,
-    };
-  }, [rows]);
+  const contagens = indicadores.data;
+  const noPrazo = contagens?.emAberto ? `${(((contagens.emAberto - contagens.vencidos) / contagens.emAberto) * 100).toFixed(1)}%` : '—';
 
   function setView(v: 'lista' | 'kanban') {
     const sp = new URLSearchParams(params);
@@ -90,8 +89,17 @@ export function FilaGlobalView() {
     router.replace(`/chamados?${sp}`, { scroll: false });
   }
 
-  function onExport() {
-    exportCsv('chamados', rows ?? [], [
+  async function onExport() {
+    setExportando(true);
+    let rows;
+    try {
+      rows = await chamadosService.exportar(semPagina(filtros));
+    } catch (err) {
+      return toast.error(getErrorMessage(err));
+    } finally {
+      setExportando(false);
+    }
+    exportCsv('chamados', rows, [
       { header: 'ID', value: (c) => c.id },
       { header: 'Título', value: (c) => c.titulo },
       { header: 'Categoria', value: (c) => c.categoriaNome },
@@ -119,7 +127,7 @@ export function FilaGlobalView() {
                 { value: 'kanban', label: 'Kanban' },
               ]}
             />
-            <Button variant="outline" icon={<Download className="h-4 w-4" />} onClick={onExport}>
+            <Button variant="outline" icon={<Download className="h-4 w-4" />} onClick={onExport} loading={exportando}>
               CSV
             </Button>
             <Link href="/chamados/novo" className={buttonVariants()}>
@@ -150,7 +158,7 @@ export function FilaGlobalView() {
       {isError ? (
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
       ) : view === 'kanban' ? (
-        <KanbanBoard chamados={rows ?? []} onMove={onMove} />
+        <KanbanBoard chamados={kanban.data?.chamados ?? []} totais={kanban.data?.totais} onMove={onMove} />
       ) : (
         <DataTable
           columns={columns}
@@ -163,10 +171,10 @@ export function FilaGlobalView() {
       )}
 
       <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Em Aberto" value={stats.pendentes} icon={<Ticket className="h-5 w-5" />} tone="primary" loading={isLoading} />
-        <StatCard label="Dentro do SLA" value={stats.noPrazo} icon={<AlarmClock className="h-5 w-5" />} tone="success" loading={isLoading} />
-        <StatCard label="SLA Vencido" value={stats.vencidos} icon={<AlertOctagon className="h-5 w-5" />} tone="danger" loading={isLoading} />
-        <StatCard label="Resolvidos / Concluídos" value={stats.resolvidos} icon={<CheckCheck className="h-5 w-5" />} loading={isLoading} />
+        <StatCard label="Em Aberto" value={contagens?.emAberto ?? 0} icon={<Ticket className="h-5 w-5" />} tone="primary" loading={indicadores.isLoading} />
+        <StatCard label="Dentro do SLA" value={noPrazo} icon={<AlarmClock className="h-5 w-5" />} tone="success" loading={indicadores.isLoading} />
+        <StatCard label="SLA Vencido" value={contagens?.vencidos ?? 0} icon={<AlertOctagon className="h-5 w-5" />} tone="danger" loading={indicadores.isLoading} />
+        <StatCard label="Resolvidos / Concluídos" value={contagens?.finalizados ?? 0} icon={<CheckCheck className="h-5 w-5" />} loading={indicadores.isLoading} />
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-xs text-brand-muted">
         {view === 'kanban' ? <KanbanSquare aria-hidden className="h-3.5 w-3.5" /> : <List aria-hidden className="h-3.5 w-3.5" />}
@@ -174,7 +182,7 @@ export function FilaGlobalView() {
           ? podeMover
             ? 'Arraste os cartões entre as colunas para alterar o status.'
             : 'Visualização somente leitura.'
-          : 'Indicadores calculados sobre todos os chamados que atendem aos filtros.'}
+          : 'Indicadores contados pela API sobre todos os chamados que atendem aos filtros.'}
       </p>
     </>
   );

@@ -20,7 +20,7 @@ import {
 import { useDebounce, useFilters, useSelection } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
 import { plural } from '@/lib/format';
-import { paginate } from '@/lib/http';
+import { paginate, TETO_PAGINA } from '@/lib/http';
 import { recursos } from '@/lib/recursos';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useCategoriaOptions, useGrupoOptions } from '@/features/cadastros/use-cadastros';
@@ -42,7 +42,9 @@ export function TriagemView() {
   const { user } = useAuth();
   const { filters, setFilter, reset } = useFilters(INITIAL);
   const search = useDebounce(filters.search);
-  const { data: rows, isLoading, isError, error, refetch } = useTriagem({ ...filters, search });
+  const { prioridade, tipo, categoriaId, grupoId } = filters;
+  const { data: resposta, isLoading, isError, error, refetch } = useTriagem({ prioridade, tipo, categoriaId, grupoId, search, page: 1, pageSize: TETO_PAGINA.triagem });
+  const rows = resposta?.data;
   const pagina = useMemo(() => (rows ? paginate(rows, filters.page, filters.pageSize) : undefined), [rows, filters.page, filters.pageSize]);
   const categorias = useCategoriaOptions();
   const grupos = useGrupoOptions();
@@ -100,6 +102,7 @@ export function TriagemView() {
   );
 
   const todos = rows ?? [];
+  const total = resposta?.total ?? 0;
   const vencidos = todos.filter(slaVencido).length;
   const proximos = todos.filter((c) => c.slaRestanteMin !== null && c.slaRestanteMin >= 0 && c.slaRestanteMin <= 120).length;
   const ids = [...selection.selected];
@@ -146,8 +149,8 @@ export function TriagemView() {
         <Field label="Grupo Responsável">
           {(id) => <Select id={id} placeholder="Todos" options={grupos} value={filters.grupoId} onChange={(e) => setFilter('grupoId', e.target.value ? Number(e.target.value) : '')} />}
         </Field>
-        <Field label="Requerente">
-          {(id) => <SearchInput id={id} placeholder="Nome ou assunto" value={filters.search} onChange={(e) => setFilter('search', e.target.value)} />}
+        <Field label="Número / Assunto">
+          {(id) => <SearchInput id={id} placeholder="Ex: 10245" value={filters.search} onChange={(e) => setFilter('search', e.target.value)} />}
         </Field>
       </FilterBar>
 
@@ -184,7 +187,8 @@ export function TriagemView() {
             : 'Nenhum vencimento previsto para as próximas 2 horas.'}
         </Callout>
         <Callout tone="info" title="Aguardando Triagem" icon={<Inbox className="h-5 w-5" />}>
-          <span className="text-2xl font-bold text-brand-darker">{todos.length}</span> <span className="text-xs">{todos.length === 1 ? 'chamado' : 'chamados'} sem técnico atribuído</span>
+          <span className="text-2xl font-bold text-brand-darker">{total}</span> <span className="text-xs">{total === 1 ? 'chamado' : 'chamados'} sem técnico atribuído</span>
+          {total > todos.length && <span className="mt-1 block text-xs">Exibindo os {todos.length} mais urgentes.</span>}
         </Callout>
       </div>
 

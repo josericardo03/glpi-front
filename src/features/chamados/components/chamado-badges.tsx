@@ -23,7 +23,7 @@ export const PRIORIDADE_META: Record<Prioridade, { label: string; tone: BadgeTon
 
 export const STATUS_OPTIONS = (Object.keys(STATUS_META) as StatusChamado[]).map((s) => ({ value: s, label: STATUS_META[s].label }));
 
-export { isFinalizado, TRANSICOES, transicoesComuns } from '../utils/transicoes';
+export { isFinalizado, STATUS_ABERTOS, STATUS_FINALIZADOS, TRANSICOES, transicoesComuns } from '../utils/transicoes';
 
 export const MOTIVOS_PAUSA = (Object.keys(MOTIVO_PAUSA_LABEL) as MotivoPausa[]).map((value) => ({ value, label: MOTIVO_PAUSA_LABEL[value] }));
 export const PRIORIDADE_OPTIONS = (Object.keys(PRIORIDADE_META) as Prioridade[]).map((p) => ({ value: p, label: PRIORIDADE_META[p].label }));

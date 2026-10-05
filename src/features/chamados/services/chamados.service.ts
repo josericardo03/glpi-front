@@ -2,7 +2,7 @@ import { isAxiosError } from 'axios';
 import { api } from '@/lib/api';
 import { currentTenantId } from '@/lib/backend/lookups';
 import type { ApiChamado, ApiChamadoDetalhe } from '@/lib/backend/types';
-import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
+import { contar, data, getAll, getPagina, matches, paginate, request, TETO_PAGINA } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type {
@@ -15,13 +15,14 @@ import type {
   Comentario,
   CsatInput,
   MotivoPausa,
+  Paginated,
   PausaSla,
   Worklog,
 } from '@/types';
 import { ANEXO_MAX_BYTES } from '../utils/anexos';
 import { calcularPrioridade, categoriaAceitaTipo, politicaAplicavel } from '../utils/prioridade';
 import { STATUS_LABEL, TRANSICOES } from '../utils/transicoes';
-import { listarChamados, loadCtx, toChamado, toChamadoDetalhe } from './chamado.mapper';
+import { loadCtx, toChamado, toChamadoDetalhe } from './chamado.mapper';
 
 const toResumo = ({ comentarios, worklogs, pausas, anexos, historico, problemas, mudancas, csat, ...c }: ChamadoDetalhe): Chamado => c;
 const find = (id: number) => {
@@ -30,54 +31,83 @@ const find = (id: number) => {
   return c;
 };
 const nowIso = () => new Date().toISOString();
-function aplicarFiltros(rows: Chamado[], f: ChamadoFiltros, categoriaPai: (id: number) => number | null | undefined) {
-  return rows.filter(
-    (c) =>
-      (matches(c.titulo, f.search) || matches(String(c.id), f.search) || matches(c.solicitanteNome, f.search)) &&
-      (!f.status || c.status === f.status) &&
-      (!f.prioridade || c.prioridade === f.prioridade) &&
-      (!f.tipo || c.tipo === f.tipo) &&
-      (!f.categoriaId || c.categoriaId === Number(f.categoriaId) || categoriaPai(c.categoriaId) === Number(f.categoriaId)) &&
-      (!f.tecnicoId || c.tecnicoId === Number(f.tecnicoId)) &&
-      (!f.grupoId || c.grupoId === Number(f.grupoId)),
-  );
+
+const statusDoFiltro = (f: ChamadoFiltros) => (f.status ? [f.status] : f.statusIn);
+
+function paramsChamados(f: ChamadoFiltros): Record<string, unknown> {
+  const status = statusDoFiltro(f);
+  return {
+    ...(status?.length && { status: status.join(',') }),
+    ...(f.prioridade && { prioridade: f.prioridade }),
+    ...(f.tipo && { tipo: f.tipo }),
+    ...(f.categoriaId && { id_categoria: f.categoriaId }),
+    ...(f.tecnicoId && { id_tecnico: f.tecnicoId }),
+    ...(f.grupoId && { id_grupo: f.grupoId }),
+    ...(f.slaVencido !== undefined && { sla_vencido: f.slaVencido }),
+    ...(f.search?.trim() && { busca: f.search.trim() }),
+    ...(f.ordenar && { ordenar: f.ordenar }),
+  };
 }
 
-function filtrar(f: ChamadoFiltros) {
-  return aplicarFiltros(db.chamados.map(toResumo), f, (id) => db.categorias.find((x) => x.id === id)?.categoriaPaiId).sort((a, b) =>
-    b.atualizadoEm.localeCompare(a.atualizadoEm),
-  );
-}
+/** `statusIn: []` significa "nenhum status": a resposta é vazia sem consultar a API. */
+const semResultado = (f: ChamadoFiltros) => statusDoFiltro(f)?.length === 0;
+const paginaVazia = (f: ChamadoFiltros): Paginated<Chamado> => ({ data: [], total: 0, page: f.page ?? 1, pageSize: f.pageSize ?? 10 });
 
-const porSla = (a: Chamado, b: Chamado) => (a.slaRestanteMin ?? Infinity) - (b.slaRestanteMin ?? Infinity);
+function filtrarMock(f: ChamadoFiltros) {
+  const status = statusDoFiltro(f);
+  return db.chamados
+    .map(toResumo)
+    .filter(
+      (c) =>
+        (matches(c.titulo, f.search) || matches(c.descricao, f.search) || matches(String(c.id), f.search)) &&
+        (!status || status.includes(c.status)) &&
+        (!f.prioridade || c.prioridade === f.prioridade) &&
+        (!f.tipo || c.tipo === f.tipo) &&
+        (!f.categoriaId || c.categoriaId === Number(f.categoriaId)) &&
+        (!f.tecnicoId || (f.tecnicoId === 'sem' ? !c.tecnicoId : c.tecnicoId === Number(f.tecnicoId))) &&
+        (!f.grupoId || c.grupoId === Number(f.grupoId)) &&
+        (f.slaVencido === undefined || c.slaVencido === f.slaVencido),
+    )
+    .sort((a, b) => b.abertoEm.localeCompare(a.abertoEm));
+}
 
 const semEndpoint = (recurso: string) => new Error(`${recurso} ainda não está disponível na API.`);
 
-/** Listagens devolvem o conjunto filtrado completo; a paginação é feita na tela. */
+async function paginaReal(url: '/chamados' | '/triagem', f: ChamadoFiltros, teto: number): Promise<Paginated<Chamado>> {
+  if (semResultado(f)) return paginaVazia(f);
+  const p = await getPagina<ApiChamado>(url, paramsChamados(f), f.page ?? 1, Math.min(f.pageSize ?? 10, teto));
+  return { ...p, data: p.data.map((r) => toChamado(r)) };
+}
+
+/** Filtros, ordenação e paginação são aplicados pela API. */
 export const chamadosService = {
   list: (f: ChamadoFiltros) =>
-    request<Chamado[]>(
-      async () => {
-        const [rows, ctx] = await Promise.all([listarChamados(), loadCtx()]);
-        return aplicarFiltros(rows, f, (id) => ctx.categorias.get(id)?.id_categoria_pai).sort((a, b) => b.atualizadoEm.localeCompare(a.atualizadoEm));
-      },
-      () => filtrar(f),
+    request<Paginated<Chamado>>(
+      () => paginaReal('/chamados', f, TETO_PAGINA.chamados),
+      () => (semResultado(f) ? paginaVazia(f) : paginate(filtrarMock(f), f.page, f.pageSize)),
     ),
 
-  triagem: (f: ChamadoFiltros) =>
-    request<Chamado[]>(
-      async () => {
-        const [rows, ctx] = await Promise.all([getAll<ApiChamado>('/triagem', TETO_PAGINA.triagem), loadCtx()]);
-        return aplicarFiltros(
-          rows.map((r) => toChamado(r, ctx)),
-          { ...f, status: '' },
-          (id) => ctx.categorias.get(id)?.id_categoria_pai,
-        )
-          .filter((c) => !c.tecnicoId)
-          .sort(porSla);
-      },
-      () => filtrar({ ...f, status: '' }).filter((c) => c.status === 'NOVO' && !c.tecnicoId).sort(porSla),
+  contar: (f: ChamadoFiltros) =>
+    request<number>(
+      async () => (semResultado(f) ? 0 : contar('/chamados', paramsChamados(f))),
+      () => (semResultado(f) ? 0 : filtrarMock(f).length),
     ),
+
+  /** Todos os chamados do filtro, para exportação. */
+  exportar: (f: ChamadoFiltros) =>
+    request<Chamado[]>(
+      async () => (semResultado(f) ? [] : (await getAll<ApiChamado>('/chamados', TETO_PAGINA.chamados, paramsChamados(f))).map((r) => toChamado(r))),
+      () => filtrarMock(f),
+    ),
+
+  /** Chamados novos sem técnico, os mais urgentes primeiro. */
+  triagem: (f: ChamadoFiltros) => {
+    const filtros: ChamadoFiltros = { ...f, status: '', statusIn: undefined, tecnicoId: 'sem', ordenar: f.ordenar ?? 'prioridade:desc' };
+    return request<Paginated<Chamado>>(
+      () => paginaReal('/triagem', filtros, TETO_PAGINA.triagem),
+      () => paginate(filtrarMock({ ...filtros, statusIn: ['NOVO'] }), f.page, f.pageSize),
+    );
+  },
 
   get: (id: number) =>
     request<ChamadoDetalhe>(

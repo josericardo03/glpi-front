@@ -5,8 +5,11 @@ import { useToast } from '@/components/ui/toast';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { getErrorMessage, HTTP_MESSAGES, httpStatus } from '@/lib/api';
 import { plural } from '@/lib/format';
-import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput, CsatInput, MotivoPausa } from '@/types';
+import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput, CsatInput, MotivoPausa, StatusChamado } from '@/types';
 import { chamadosService } from '../services/chamados.service';
+import { STATUS_ABERTOS, STATUS_FINALIZADOS } from '../utils/transicoes';
+
+const STATUS_KANBAN: StatusChamado[] = [...STATUS_ABERTOS, ...STATUS_FINALIZADOS];
 
 type FiltrosSemPagina = Omit<ChamadoFiltros, 'page' | 'pageSize'>;
 
@@ -14,24 +17,66 @@ const semPagina = ({ page: _p, pageSize: _s, ...f }: ChamadoFiltros): FiltrosSem
 
 export const chamadosKeys = {
   all: ['chamados'] as const,
-  list: (f: FiltrosSemPagina) => ['chamados', 'list', f] as const,
-  triagem: (f: FiltrosSemPagina) => ['chamados', 'triagem', f] as const,
+  list: (f: ChamadoFiltros) => ['chamados', 'list', f] as const,
+  indicadores: (f: FiltrosSemPagina) => ['chamados', 'indicadores', f] as const,
+  kanban: (f: FiltrosSemPagina) => ['chamados', 'kanban', f] as const,
+  triagem: (f: ChamadoFiltros) => ['chamados', 'triagem', f] as const,
   detail: (id: number) => ['chamados', 'detail', id] as const,
 };
 
 /** Indicadores derivados de chamados que precisam ser recalculados após qualquer mutação. */
 const DERIVADOS = [chamadosKeys.all, ['dashboard'], ['relatorios'], ['aprovacoes']] as const;
 
-/** Lista filtrada completa (a paginação é feita pela tela com `paginate`). */
-export const useChamados = (f: ChamadoFiltros, enabled = true) => {
-  const filtros = semPagina(f);
-  return useQuery({ queryKey: chamadosKeys.list(filtros), queryFn: () => chamadosService.list(filtros), placeholderData: keepPreviousData, enabled });
-};
+/** Uma página da lista; filtros e paginação são aplicados pela API. */
+export const useChamados = (f: ChamadoFiltros, enabled = true) =>
+  useQuery({ queryKey: chamadosKeys.list(f), queryFn: () => chamadosService.list(f), placeholderData: keepPreviousData, enabled });
 
-export const useTriagem = (f: ChamadoFiltros) => {
+export const useTriagem = (f: ChamadoFiltros) =>
+  useQuery({ queryKey: chamadosKeys.triagem(f), queryFn: () => chamadosService.triagem(f), placeholderData: keepPreviousData });
+
+/** Status do filtro que também pertencem ao grupo (vazio quando o filtro exclui o grupo inteiro). */
+function restringirStatus(f: FiltrosSemPagina, grupo: StatusChamado[]): FiltrosSemPagina {
+  return { ...f, status: '', statusIn: f.status ? grupo.filter((s) => s === f.status) : grupo };
+}
+
+/** Contagens da fila (em aberto, SLA vencido e finalizados) sobre o filtro atual, via `X-Total-Count`. */
+export function useIndicadoresFila(f: ChamadoFiltros) {
   const filtros = semPagina(f);
-  return useQuery({ queryKey: chamadosKeys.triagem(filtros), queryFn: () => chamadosService.triagem(filtros), placeholderData: keepPreviousData });
-};
+  return useQuery({
+    queryKey: chamadosKeys.indicadores(filtros),
+    queryFn: async () => {
+      const abertos = restringirStatus(filtros, STATUS_ABERTOS);
+      const [emAberto, vencidos, finalizados] = await Promise.all([
+        chamadosService.contar(abertos),
+        chamadosService.contar({ ...abertos, slaVencido: true }),
+        chamadosService.contar(restringirStatus(filtros, STATUS_FINALIZADOS)),
+      ]);
+      return { emAberto, vencidos, finalizados };
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+export const KANBAN_POR_COLUNA = 50;
+
+/** Uma consulta por coluna do Kanban, com o total real de cada status. */
+export function useKanbanChamados(f: ChamadoFiltros, enabled: boolean) {
+  const filtros = semPagina(f);
+  return useQuery({
+    queryKey: chamadosKeys.kanban(filtros),
+    queryFn: async () => {
+      const colunas = STATUS_KANBAN.filter((s) => !filtros.status || filtros.status === s);
+      const paginas = await Promise.all(
+        colunas.map((s) => chamadosService.list({ ...filtros, status: s, statusIn: undefined, page: 1, pageSize: KANBAN_POR_COLUNA })),
+      );
+      const totais = Object.fromEntries(STATUS_KANBAN.map((s) => [s, 0])) as Record<StatusChamado, number>;
+      colunas.forEach((s, i) => (totais[s] = paginas[i]!.total));
+      return { chamados: paginas.flatMap((p) => p.data), totais };
+    },
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}
 
 export const useChamado = (id: number) =>
   useQuery({ queryKey: chamadosKeys.detail(id), queryFn: () => chamadosService.get(id), enabled: Number.isInteger(id) && id > 0 });
