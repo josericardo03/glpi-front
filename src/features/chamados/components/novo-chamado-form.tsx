@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Send, Tag } from 'lucide-react';
 import {
   Button,
@@ -20,6 +20,7 @@ import {
 import { formatMinutes } from '@/lib/format';
 import { useAuth } from '@/features/auth/auth-provider';
 import { usePoliticasSla } from '@/features/admin/use-admin';
+import { useAtivos } from '@/features/ativos/use-ativos';
 import { useCategoriaOptions, useCategorias } from '@/features/cadastros/use-cadastros';
 import type { ChamadoInput, Nivel, Origem, TipoChamado } from '@/types';
 import { useCreateChamado } from '../hooks/use-chamados';
@@ -49,7 +50,7 @@ type Errors = Partial<Record<'titulo' | 'descricao' | 'categoriaId', string>>;
 export function NovoChamadoForm() {
   const router = useRouter();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const create = useCreateChamado();
 
   const [titulo, setTitulo] = useState('');
@@ -62,7 +63,17 @@ export function NovoChamadoForm() {
   const [impacto, setImpacto] = useState<Nivel>('BAIXO');
   const [urgencia, setUrgencia] = useState<Nivel>('BAIXO');
   const [arquivos, setArquivos] = useState<File[]>([]);
+  const [ativoId, setAtivoId] = useState('');
   const [errors, setErrors] = useState<Errors>({});
+
+  const { data: ativos } = useAtivos();
+  const ativoOptions = useMemo(
+    () =>
+      (ativos ?? [])
+        .filter((a) => hasRole('TECNICO') || a.responsavelId === user?.id)
+        .map((a) => ({ value: String(a.id), label: `${a.codigo} · ${a.nome}` })),
+    [ativos, hasRole, user?.id],
+  );
 
   const prioridade = calcularPrioridade(impacto, urgencia);
   const { data: politicas } = usePoliticasSla();
@@ -106,6 +117,7 @@ export function NovoChamadoForm() {
       solicitanteId: user?.id ?? 0,
       grupoId: null,
       tecnicoId: null,
+      ativoAfetadoId: ativoId ? Number(ativoId) : null,
     };
     create.mutate({ input, arquivos }, { onSuccess: (c) => router.push(`/chamados/${c.id}`) });
   }
@@ -172,6 +184,11 @@ export function NovoChamadoForm() {
               <Field label="Categoria" required error={errors.categoriaId} hint={`Somente categorias válidas para ${tipo === 'INCIDENTE' ? 'incidentes' : 'requisições'}.`}>
                 {(id) => <Select id={id} placeholder="Selecione uma categoria..." options={categorias} value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)} invalid={!!errors.categoriaId} />}
               </Field>
+              {!!ativoOptions.length && (
+                <Field label="Ativo afetado" hint={hasRole('TECNICO') ? 'Opcional: equipamento relacionado ao chamado.' : 'Opcional: um dos equipamentos sob sua responsabilidade.'}>
+                  {(id) => <Select id={id} placeholder="Nenhum" options={ativoOptions} value={ativoId} onChange={(e) => setAtivoId(e.target.value)} />}
+                </Field>
+              )}
               <Field label="Impacto">
                 {(id) => <Select id={id} options={IMPACTOS} value={impacto} onChange={(e) => setImpacto(e.target.value as Nivel)} />}
               </Field>

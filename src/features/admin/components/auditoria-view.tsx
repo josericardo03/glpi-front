@@ -1,18 +1,23 @@
 'use client';
 
 import { memo, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Download, FileSearch, Lock, Monitor } from 'lucide-react';
+import { ArrowRight, Download, FileSearch, FilterX, Lock, Monitor } from 'lucide-react';
 import {
   Badge,
   Button,
   Callout,
+  Card,
+  CardBody,
   DataTable,
   ErrorState,
+  Field,
   FilterBar,
+  Input,
   Modal,
   PageHeader,
   Pagination,
   SearchInput,
+  Select,
   Tabs,
   UserCell,
   type BadgeTone,
@@ -21,10 +26,12 @@ import {
 import { useDebounce, useFilters } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
 import { exportCsv } from '@/lib/csv';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, formatNumber } from '@/lib/format';
 import { paginate } from '@/lib/http';
 import type { AcaoAuditoria, AuditLog, AuditoriaFiltros } from '@/types';
+import { useUsuarios } from '@/features/cadastros/use-cadastros';
 import { filtrarAuditoria } from '../admin.service';
+import { AUDITORIA_MAX_EVENTOS } from '../admin.service';
 import { useAuditoria } from '../use-admin';
 
 const ACOES: Record<AcaoAuditoria, { label: string; tone: BadgeTone }> = {
@@ -40,7 +47,21 @@ const TAB_ITEMS = [
   ...(Object.keys(ACOES) as AcaoAuditoria[]).map((a) => ({ value: a, label: ACOES[a].label })),
 ];
 
-const INITIAL: AuditoriaFiltros = { page: 1, pageSize: 10, search: '', acao: '' };
+const INITIAL: AuditoriaFiltros = { page: 1, pageSize: 10, search: '', acao: '', dataInicio: '', dataFim: '', usuarioId: '', codigoAcao: '' };
+
+/**
+ * Códigos gravados pela API, somados aos que aparecem no resultado atual. Os códigos em português
+ * (CREATE_USUARIO, CREATE_ARTIGO...) só existem em registros antigos, anteriores à unificação.
+ */
+const CODIGOS_ACAO = [
+  'CREATE_CHAMADO', 'UPDATE_STATUS', 'ADD_COMENTARIO', 'ADD_ANEXO', 'ADD_WORKLOG', 'PAUSE_SLA', 'RESUME_SLA', 'LINK_ATIVO',
+  'SUBMIT_CSAT', 'CREATE_PROBLEMA', 'UPDATE_PROBLEMA', 'CREATE_MUDANCA', 'UPDATE_MUDANCA', 'CREATE_APPROVAL', 'APPROVAL_DECISION',
+  'CREATE_USER', 'CREATE_USUARIO', 'UPDATE_USER', 'UPDATE_USUARIO', 'CREATE_DEPARTMENT', 'CREATE_DEPARTAMENTO', 'CREATE_SUPPORT_GROUP',
+  'CREATE_GRUPO', 'ADD_MEMBRO_GRUPO', 'CREATE_CATEGORIA', 'CREATE_ATIVO', 'CREATE_KB_CATEGORY', 'CREATE_CATEGORIA_KB', 'CREATE_KB_ARTICLE',
+  'CREATE_ARTIGO', 'UPDATE_KB_ARTICLE', 'ADD_KB_FEEDBACK', 'FEEDBACK_ARTIGO', 'CREATE_NOTIFICATION', 'READ_NOTIFICATION', 'UPDATE_NOTIFICACAO',
+  'CREATE_CLIENT', 'CREATE_BUSINESS_HOURS', 'CREATE_INTERVAL', 'CREATE_HOLIDAY', 'CREATE_SLA_POLICY', 'UPSERT_BRANDING',
+  'UPDATE_BRANDING', 'CREATE_INTEGRATION', 'EXECUTE_INTEGRATION',
+];
 
 const fmt = (v: unknown) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
 
@@ -96,13 +117,24 @@ const columns: Column<AuditLog>[] = [
 ];
 
 export function AuditoriaView() {
-  const { filters, setFilter } = useFilters(INITIAL);
+  const { filters, setFilter, setFilters } = useFilters(INITIAL);
   const [term, setTerm] = useState('');
   const search = useDebounce(term);
-  const { data, isLoading, isError, error, refetch } = useAuditoria();
+  const { dataInicio, dataFim, usuarioId, codigoAcao } = filters;
+  const filtrosApi = useMemo(() => ({ dataInicio, dataFim, usuarioId, codigoAcao }), [dataInicio, dataFim, usuarioId, codigoAcao]);
+  const { data, isLoading, isFetching, isError, error, refetch } = useAuditoria(filtrosApi);
+  const { data: usuarios } = useUsuarios();
   const [detalhe, setDetalhe] = useState<AuditLog | null>(null);
+  const periodoInvalido = !!dataInicio && !!dataFim && dataFim < dataInicio;
+  const filtrandoNaApi = !!(dataInicio || dataFim || usuarioId || codigoAcao);
 
   useEffect(() => setFilter('search', search), [search, setFilter]);
+
+  const codigos = useMemo(
+    () => Array.from(new Set([...CODIGOS_ACAO, ...(data ?? []).flatMap((l) => (l.acaoDetalhe ? [l.acaoDetalhe] : []))])).sort(),
+    [data],
+  );
+  const usuarioOptions = useMemo(() => (usuarios ?? []).map((u) => ({ value: u.id, label: u.nome })).sort((a, b) => a.label.localeCompare(b.label)), [usuarios]);
 
   const filtrados = useMemo(() => filtrarAuditoria(data ?? [], { search: filters.search, acao: filters.acao }), [data, filters.search, filters.acao]);
   const pagina = paginate(filtrados, filters.page, filters.pageSize);
@@ -135,9 +167,35 @@ export function AuditoriaView() {
 
       <Tabs variant="pills" aria-label="Filtrar por tipo de ação" value={filters.acao ?? ''} onChange={(v) => setFilter('acao', v)} items={TAB_ITEMS} className="mb-4 border border-brand-border" />
 
+      <Card className="mb-4">
+        <CardBody className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.4fr_1.4fr_auto] xl:items-end">
+          <Field label="De">
+            {(id) => <Input id={id} type="date" value={dataInicio} max={dataFim || undefined} onChange={(e) => setFilter('dataInicio', e.target.value)} />}
+          </Field>
+          <Field label="Até" error={periodoInvalido ? 'Antes da data inicial.' : undefined}>
+            {(id) => <Input id={id} type="date" value={dataFim} min={dataInicio || undefined} onChange={(e) => setFilter('dataFim', e.target.value)} invalid={periodoInvalido} />}
+          </Field>
+          <Field label="Usuário">
+            {(id) => <Select id={id} placeholder="Todos" options={usuarioOptions} value={usuarioId} onChange={(e) => setFilter('usuarioId', e.target.value ? Number(e.target.value) : '')} />}
+          </Field>
+          <Field label="Código da ação">
+            {(id) => <Select id={id} placeholder="Todos" options={codigos.map((c) => ({ value: c, label: c }))} value={codigoAcao} onChange={(e) => setFilter('codigoAcao', e.target.value)} />}
+          </Field>
+          <Button variant="ghost" icon={<FilterX className="h-4 w-4" />} disabled={!filtrandoNaApi} onClick={() => setFilters({ ...filters, page: 1, dataInicio: '', dataFim: '', usuarioId: '', codigoAcao: '' })}>
+            Limpar
+          </Button>
+        </CardBody>
+      </Card>
+
       <FilterBar>
         <SearchInput aria-label="Buscar eventos" placeholder="Buscar por usuário, entidade, ação ou ID do registro..." value={term} onChange={(e) => setTerm(e.target.value)} />
       </FilterBar>
+
+      {data && data.length >= AUDITORIA_MAX_EVENTOS && (
+        <p className="mb-3 text-xs text-brand-muted" role="status">
+          Exibindo os {formatNumber(AUDITORIA_MAX_EVENTOS)} eventos mais recentes{filtrandoNaApi ? ' para estes filtros' : ''}. Refine o período para ver eventos mais antigos.
+        </p>
+      )}
 
       {isError ? (
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
@@ -145,7 +203,8 @@ export function AuditoriaView() {
         <DataTable
           columns={columns}
           data={data ? pagina.data : undefined}
-          loading={isLoading}
+          loading={isLoading || (isFetching && !data)}
+          className={isFetching ? 'opacity-70 transition-opacity' : undefined}
           caption="Eventos de auditoria"
           rowKey={(l) => l.id}
           onRowClick={setDetalhe}

@@ -1,29 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { BellRing, CalendarDays, Clock, Globe2, Lock, RotateCcw, Save, ShieldCheck, Timer } from 'lucide-react';
-import {
-  Badge,
-  Button,
-  Callout,
-  Card,
-  CardBody,
-  CardHeader,
-  ErrorState,
-  Field,
-  Input,
-  PageHeader,
-  Skeleton,
-  Switch,
-  ToggleGroup,
-} from '@/components/ui';
+import { BellRing, CalendarDays, CalendarPlus, Clock, Plus, RotateCcw, Save, ShieldCheck, Timer } from 'lucide-react';
+import { Badge, Button, Callout, Card, CardBody, CardHeader, ErrorState, Field, Input, PageHeader, Select, Skeleton, Switch, Tabs } from '@/components/ui';
 import { PRIORIDADE_META } from '@/features/chamados/components/chamado-badges';
 import { getErrorMessage } from '@/lib/api';
-import { formatDate, formatMinutes } from '@/lib/format';
+import { formatMinutes } from '@/lib/format';
 import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import type { PoliticaSla } from '@/types';
-import { useHorarios, usePoliticasSla, useSalvarSla } from '../use-admin';
+import { useFeriados, useHorarios, usePoliticasSla, useSalvarSla } from '../use-admin';
+import { DurationInput } from './duration-input';
+import { nomeHorario, PoliticaModal } from './politica-modal';
+import { FeriadoModal, FeriadosTab, HorarioModal, HorariosTab } from './sla-calendarios';
 
 const PRIO_BORDER: Record<PoliticaSla['prioridade'], string> = {
   CRITICA: 'border-l-prio-critica',
@@ -32,170 +21,185 @@ const PRIO_BORDER: Record<PoliticaSla['prioridade'], string> = {
   BAIXA: 'border-l-prio-baixa',
 };
 
-interface DurationInputProps {
-  label: string;
-  value: number;
-  onChange: (min: number) => void;
-  invalid?: boolean;
-  disabled?: boolean;
-}
+type Aba = 'politicas' | 'horarios' | 'feriados';
 
-function DurationInput({ label, value, onChange, invalid, disabled }: DurationInputProps) {
-  const h = Math.floor(value / 60);
-  const m = value % 60;
-  const inteiro = (v: string) => (Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : 0);
-  const set = (hours: number, mins: number) => onChange(Math.max(0, hours) * 60 + Math.min(59, Math.max(0, mins)));
-  return (
-    <Field label={label} hint={`Total: ${formatMinutes(value)} (${value} min)`} error={invalid ? 'Deve ser menor que o tempo de solução.' : undefined}>
-      {(id) => (
-        <div className="flex items-center gap-2">
-          <Input id={id} type="number" min={0} step={1} value={h} disabled={disabled} onChange={(e) => set(inteiro(e.target.value), m)} className="text-center font-semibold" />
-          <span className="text-xs font-semibold text-brand-muted">h</span>
-          <Input
-            type="number"
-            min={0}
-            max={59}
-            step={1}
-            value={m}
-            disabled={disabled}
-            invalid={invalid}
-            aria-label={`${label} (minutos)`}
-            onChange={(e) => set(h, inteiro(e.target.value))}
-            className="text-center font-semibold"
-          />
-          <span className="text-xs font-semibold text-brand-muted">min</span>
-        </div>
-      )}
-    </Field>
-  );
-}
+const CAMPOS_EDITAVEIS = ['nome', 'tempoRespostaMin', 'tempoSolucaoMin', 'horarioComercialId', 'ativa', 'notificarGestor', 'alertaPercentual'] as const;
+const alterada = (p: PoliticaSla, original?: PoliticaSla) => !original || CAMPOS_EDITAVEIS.some((k) => p[k] !== original[k]);
 
 export function SlaView() {
-  const { data, isLoading, isError, error, refetch } = usePoliticasSla();
-  const { data: horarios } = useHorarios();
+  const politicasQ = usePoliticasSla();
+  const [aba, setAba] = useState<Aba>('politicas');
+  const horariosQ = useHorarios();
+  const feriadosQ = useFeriados();
   const salvar = useSalvarSla();
   const [draft, setDraft] = useState<PoliticaSla[] | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [modal, setModal] = useState<Aba | null>(null);
 
-  const editavel = recursos.edicaoSla;
-  const politicas = draft ?? data ?? [];
+  const originais = politicasQ.data ?? [];
+  const politicas = draft ?? originais;
+  const horarios = horariosQ.data ?? [];
   const selected = politicas.find((p) => p.id === selectedId) ?? politicas[0];
-  const horario = horarios?.[0];
-  const invalid = (p: PoliticaSla) => p.tempoRespostaMin >= p.tempoSolucaoMin;
+  const alteradas = draft ? draft.filter((p) => alterada(p, originais.find((o) => o.id === p.id))) : [];
+  const horarioDe = (p: PoliticaSla) => horarios.find((h) => h.id === p.horarioComercialId);
+  const erroDe = (p: PoliticaSla) =>
+    !p.nome.trim()
+      ? 'Informe o nome da política.'
+      : p.tempoSolucaoMin < 1
+        ? 'O tempo de solução deve ser de pelo menos 1 minuto.'
+        : p.tempoRespostaMin >= p.tempoSolucaoMin
+          ? 'Deve ser menor que o tempo de solução.'
+          : undefined;
 
   function update(patch: Partial<PoliticaSla>) {
-    if (!selected || !editavel) return;
+    if (!selected) return;
     setDraft(politicas.map((p) => (p.id === selected.id ? { ...p, ...patch } : p)));
   }
 
-  function onSave() {
-    if (draft) salvar.mutate(draft, { onSuccess: () => setDraft(null) });
-  }
+  if (politicasQ.isError) return <ErrorState message={getErrorMessage(politicasQ.error)} onRetry={politicasQ.refetch} />;
 
-  if (isError) return <ErrorState message={getErrorMessage(error)} onRetry={refetch} />;
+  const acaoPrincipal = {
+    politicas: { label: 'Nova Política', icon: <Plus className="h-4 w-4" /> },
+    horarios: { label: 'Novo Horário', icon: <Clock className="h-4 w-4" /> },
+    feriados: { label: 'Novo Feriado', icon: <CalendarPlus className="h-4 w-4" /> },
+  }[aba];
 
   return (
     <>
       <PageHeader
         title="Configuração de SLA"
-        description={editavel ? 'Defina metas de resposta e solução por prioridade, calendário de contagem e ações automáticas.' : 'Metas de resposta e solução por prioridade.'}
+        description="Metas de resposta e solução por prioridade, expediente de atendimento e feriados que pausam o relógio."
         breadcrumbs={[{ label: 'Administração' }, { label: 'Políticas de SLA' }]}
         actions={
-          editavel && (
-            <>
-              <Button variant="outline" icon={<RotateCcw className="h-4 w-4" />} disabled={!draft} onClick={() => setDraft(null)}>
-                Descartar
-              </Button>
-              <Button icon={<Save className="h-4 w-4" />} disabled={!draft || politicas.some(invalid)} loading={salvar.isPending} onClick={onSave}>
-                Salvar Regras
-              </Button>
-            </>
-          )
+          <>
+            {aba === 'politicas' && (
+              <>
+                <Button variant="outline" icon={<RotateCcw className="h-4 w-4" />} disabled={!alteradas.length} onClick={() => setDraft(null)}>
+                  Descartar
+                </Button>
+                <Button
+                  variant="outline"
+                  icon={<Save className="h-4 w-4" />}
+                  disabled={!alteradas.length || alteradas.some(erroDe)}
+                  loading={salvar.isPending}
+                  onClick={() => salvar.mutate(alteradas, { onSuccess: () => setDraft(null) })}
+                >
+                  Salvar alterações{alteradas.length ? ` (${alteradas.length})` : ''}
+                </Button>
+              </>
+            )}
+            <Button icon={acaoPrincipal.icon} onClick={() => setModal(aba)}>
+              {acaoPrincipal.label}
+            </Button>
+          </>
         }
       />
 
-      {!editavel && (
-        <Callout tone="info" icon={<Lock className="h-5 w-5" />} className="mb-6">
-          Visualização somente leitura: a API atual não permite editar políticas existentes nem consultar turnos e feriados.
-        </Callout>
+      <Tabs
+        variant="pills"
+        aria-label="Seções do SLA"
+        value={aba}
+        onChange={setAba}
+        className="mb-6 border border-brand-border"
+        items={[
+          { value: 'politicas', label: 'Políticas', icon: <ShieldCheck className="h-4 w-4" />, count: politicasQ.data?.length },
+          { value: 'horarios', label: 'Horários Comerciais', icon: <Clock className="h-4 w-4" />, count: horariosQ.data?.length },
+          { value: 'feriados', label: 'Feriados', icon: <CalendarDays className="h-4 w-4" />, count: feriadosQ.data?.length },
+        ]}
+      />
+
+      {aba === 'horarios' && (
+        <HorariosTab horarios={horariosQ.data} politicas={politicasQ.data ?? []} isLoading={horariosQ.isLoading} error={horariosQ.error} onRetry={horariosQ.refetch} onNovo={() => setModal('horarios')} />
+      )}
+      {aba === 'feriados' && (
+        <FeriadosTab feriados={feriadosQ.data} isLoading={feriadosQ.isLoading} error={feriadosQ.error} onRetry={feriadosQ.refetch} onNovo={() => setModal('feriados')} />
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-        <div className="grid content-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted sm:col-span-2 xl:col-span-1">Políticas por Prioridade</p>
-          {!isLoading && !politicas.length && <p className="text-sm text-brand-muted">Nenhuma política de SLA cadastrada.</p>}
-          {isLoading
-            ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-24 w-full" />)
-            : politicas.map((p) => {
-                const meta = PRIORIDADE_META[p.prioridade];
-                const active = p.id === selected?.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setSelectedId(p.id)}
-                    aria-pressed={active}
-                    className={cn(
-                      'w-full rounded-lg border border-l-4 bg-white p-4 text-left shadow-card transition',
-                      PRIO_BORDER[p.prioridade],
-                      active ? 'border-brand-accent ring-2 ring-brand-accent/20' : 'border-brand-border hover:border-slate-300',
+      {aba === 'politicas' && (
+        <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+          <div className="grid content-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted sm:col-span-2 xl:col-span-1">Políticas por Prioridade</p>
+            {!politicasQ.isLoading && !politicas.length && <p className="text-sm text-brand-muted">Nenhuma política de SLA cadastrada.</p>}
+            {politicasQ.isLoading
+              ? Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-24 w-full" />)
+              : politicas.map((p) => {
+                  const meta = PRIORIDADE_META[p.prioridade];
+                  const active = p.id === selected?.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSelectedId(p.id)}
+                      aria-pressed={active}
+                      className={cn(
+                        'w-full rounded-lg border border-l-4 bg-white p-4 text-left shadow-card transition',
+                        PRIO_BORDER[p.prioridade],
+                        active ? 'border-brand-accent ring-2 ring-brand-accent/20' : 'border-brand-border hover:border-slate-300',
+                        !p.ativa && 'opacity-60',
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge tone={meta.tone}>{meta.label}</Badge>
+                        <span className="flex gap-1">
+                          {alteradas.some((a) => a.id === p.id) && <Badge tone="pendente">Alterada</Badge>}
+                          {!p.ativa && <Badge tone="neutral">Inativa</Badge>}
+                          {erroDe(p) && <Badge tone="danger">Inválida</Badge>}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold text-brand-darker">{p.nome}</p>
+                      <div className="mt-2 flex gap-4 text-xs text-brand-muted">
+                        <span className="inline-flex items-center gap-1"><Timer className="h-3.5 w-3.5" /> Resp. {formatMinutes(p.tempoRespostaMin)}</span>
+                        <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Sol. {formatMinutes(p.tempoSolucaoMin)}</span>
+                        <span className="ml-auto font-semibold">{p.calendario === '24X7' ? '24x7' : 'Comercial'}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+          </div>
+
+          {selected && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader dark title={selected.nome || 'Sem nome'} description={selected.descricao} icon={<ShieldCheck className="h-5 w-5" />} />
+                <CardBody className="grid gap-6 md:grid-cols-2">
+                  <Field label="Nome" required error={!selected.nome.trim() ? 'Informe o nome da política.' : undefined} className="md:col-span-2">
+                    {(id) => <Input id={id} maxLength={100} value={selected.nome} onChange={(e) => update({ nome: e.target.value })} invalid={!selected.nome.trim()} />}
+                  </Field>
+                  <DurationInput
+                    label="Tempo de Primeira Resposta"
+                    value={selected.tempoRespostaMin}
+                    error={selected.tempoRespostaMin >= selected.tempoSolucaoMin ? 'Deve ser menor que o tempo de solução.' : undefined}
+                    onChange={(v) => update({ tempoRespostaMin: v })}
+                  />
+                  <DurationInput label="Tempo de Solução" value={selected.tempoSolucaoMin} onChange={(v) => update({ tempoSolucaoMin: v })} />
+                  <Field label="Horário comercial" hint="O relógio pausa fora dos intervalos deste horário e nos feriados cadastrados.">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        placeholder={horariosQ.isLoading ? 'Carregando...' : 'Selecione...'}
+                        options={horarios.map((h) => ({ value: h.id, label: `${nomeHorario(h)}${h.ativo ? '' : ' (inativo)'}` }))}
+                        value={selected.horarioComercialId ?? ''}
+                        onChange={(e) => update({ horarioComercialId: e.target.value ? Number(e.target.value) : null, calendario: e.target.value ? 'COMERCIAL' : '24X7' })}
+                      />
                     )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <Badge tone={meta.tone}>{meta.label}</Badge>
-                      {invalid(p) && <Badge tone="danger">Inválida</Badge>}
-                    </div>
-                    <p className="mt-2 text-sm font-semibold text-brand-darker">{p.nome}</p>
-                    <div className="mt-2 flex gap-4 text-xs text-brand-muted">
-                      <span className="inline-flex items-center gap-1"><Timer className="h-3.5 w-3.5" /> Resp. {formatMinutes(p.tempoRespostaMin)}</span>
-                      <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Sol. {formatMinutes(p.tempoSolucaoMin)}</span>
-                      <span className="ml-auto font-semibold">{p.calendario === '24X7' ? '24x7' : 'Comercial'}</span>
-                    </div>
-                  </button>
-                );
-              })}
-        </div>
-
-        {selected && (
-          <div className="space-y-6">
-            <Card>
-              <CardHeader dark title={selected.nome} description={selected.descricao} icon={<ShieldCheck className="h-5 w-5" />} />
-              <CardBody className="grid gap-6 md:grid-cols-2">
-                <DurationInput
-                  label="Tempo de Primeira Resposta"
-                  value={selected.tempoRespostaMin}
-                  invalid={invalid(selected)}
-                  disabled={!editavel}
-                  onChange={(v) => update({ tempoRespostaMin: v })}
-                />
-                <DurationInput label="Tempo de Solução" value={selected.tempoSolucaoMin} disabled={!editavel} onChange={(v) => update({ tempoSolucaoMin: v })} />
-                <div className="md:col-span-2">
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">Calendário de Contagem</p>
-                  {editavel ? (
-                    <ToggleGroup
-                      value={selected.calendario}
-                      aria-label="Calendário de contagem"
-                      onChange={(calendario) => update({ calendario, horarioComercialId: calendario === 'COMERCIAL' ? (horario?.id ?? null) : null })}
-                      options={[
-                        { value: '24X7', label: '24x7 (corrido)' },
-                        { value: 'COMERCIAL', label: 'Horário Comercial' },
-                      ]}
-                      className="w-full max-w-md"
+                  </Field>
+                  <div className="self-end rounded-md bg-slate-50 p-3">
+                    <Switch
+                      label="Política ativa"
+                      description="Só políticas ativas valem para novos chamados."
+                      checked={selected.ativa}
+                      onChange={(ativa) => update({ ativa })}
                     />
-                  ) : (
-                    <Badge tone="neutral">{selected.calendario === '24X7' ? '24x7 (corrido)' : 'Horário Comercial'}</Badge>
+                  </div>
+                  {horarioDe(selected) && !horarioDe(selected)!.ativo && (
+                    <Callout tone="warning" className="md:col-span-2">
+                      O horário &quot;{nomeHorario(horarioDe(selected)!)}&quot; está inativo.
+                    </Callout>
                   )}
-                  <p className="mt-2 text-xs text-brand-muted">
-                    {selected.calendario === '24X7'
-                      ? 'O relógio do SLA corre ininterruptamente, inclusive fins de semana e feriados.'
-                      : `O relógio pausa fora de "${horario?.nome ?? 'Horário Comercial'}" e em feriados cadastrados.`}
-                  </p>
-                </div>
-              </CardBody>
-            </Card>
+                </CardBody>
+              </Card>
 
-            {editavel && (
-              <>
+              {recursos.alertasSla && (
                 <Card>
                   <CardHeader title="Ações Automáticas" description="Disparadas pelo motor de SLA quando a meta se aproxima do vencimento." icon={<BellRing className="h-5 w-5" />} />
                   <CardBody className="space-y-5">
@@ -230,56 +234,21 @@ export function SlaView() {
                     )}
                   </CardBody>
                 </Card>
+              )}
 
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <Card>
-                    <CardHeader title="Turnos de Atendimento" description={horario?.nome} icon={<Globe2 className="h-5 w-5" />} />
-                    <CardBody className="divide-y divide-brand-border p-0">
-                      {!horarios ? (
-                        <Skeleton className="m-5 h-16" />
-                      ) : horario?.turnos.length ? (
-                        horario.turnos.map((t) => (
-                          <div key={t.dias} className="flex items-center justify-between px-5 py-3 text-sm">
-                            <span className="font-medium text-brand-darker">{t.dias}</span>
-                            <span className="font-mono text-brand-muted">
-                              {t.inicio} – {t.fim}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="px-5 py-4 text-sm text-brand-muted">Nenhum turno disponível.</p>
-                      )}
-                    </CardBody>
-                  </Card>
-                  <Card>
-                    <CardHeader title="Feriados" description="Não contabilizados no calendário comercial." icon={<CalendarDays className="h-5 w-5" />} />
-                    <CardBody className="divide-y divide-brand-border p-0">
-                      {!horarios ? (
-                        <Skeleton className="m-5 h-16" />
-                      ) : horario?.feriados.length ? (
-                        horario.feriados.map((f) => (
-                          <div key={f.data} className="flex items-center justify-between px-5 py-3 text-sm">
-                            <span className="font-medium text-brand-darker">{f.descricao}</span>
-                            <span className="font-mono text-brand-muted">{formatDate(`${f.data}T12:00:00`)}</span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="px-5 py-4 text-sm text-brand-muted">Nenhum feriado disponível.</p>
-                      )}
-                    </CardBody>
-                  </Card>
-                </div>
-              </>
-            )}
+              {!!alteradas.length && (
+                <Callout tone="warning" title="Alterações não salvas">
+                  As metas passam a valer para novos chamados após salvar. Chamados em andamento mantêm a política vigente na abertura. Ativar uma política que repete a prioridade e o tipo de outra ativa é recusado pela API.
+                </Callout>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
-            {draft && (
-              <Callout tone="warning" title="Alterações não salvas">
-                As metas passam a valer para novos chamados após salvar. Chamados em andamento mantêm a política vigente na abertura.
-              </Callout>
-            )}
-          </div>
-        )}
-      </div>
+      <PoliticaModal open={modal === 'politicas'} onClose={() => setModal(null)} politicas={politicasQ.data ?? []} horarios={horarios} onCadastrarHorario={() => setModal('horarios')} />
+      <HorarioModal open={modal === 'horarios'} onClose={() => setModal(null)} />
+      <FeriadoModal open={modal === 'feriados'} onClose={() => setModal(null)} />
     </>
   );
 }

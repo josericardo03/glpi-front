@@ -108,9 +108,45 @@ export interface ApiAnexo {
   data_upload: string;
 }
 
+export interface ApiVinculoItil {
+  id: number;
+  titulo: string;
+  status: string;
+}
+
 export interface ApiChamadoDetalhe extends ApiChamado {
   comentarios_chamados: ApiComentario[];
   anexos_chamados: ApiAnexo[];
+  ativos: { id: number; nome: string; codigo_patrimonio: string; tipo: string }[];
+  id_ativo_afetado: number | null;
+  problemas: ApiVinculoItil[];
+  mudancas: ApiVinculoItil[];
+  csat: { avaliado: false } | { avaliado: true; nota_satisfacao: number; comentarios: string | null; data_resposta: string };
+  worklogs: {
+    id: number;
+    id_chamado: number;
+    id_tecnico: number;
+    descricao_atividade: string;
+    tempo_trabalhado_min: number;
+    data_execucao: string;
+    data_registro: string;
+  }[];
+  pausas_sla: {
+    id: number;
+    id_chamado: number;
+    id_historico_origem: number | null;
+    motivo_pausa: string;
+    data_pausa: string;
+    data_retomada: string | null;
+    tempo_pausado_seg: number | null;
+  }[];
+  historico_status_chamados: {
+    id: number;
+    status_anterior: string | null;
+    status_novo: string;
+    id_usuario_alterou: number | null;
+    data_alteracao: string;
+  }[];
 }
 
 export interface ApiAtivo {
@@ -134,6 +170,19 @@ export interface ApiArtigoKb {
   visualizacoes: number;
   data_criacao: string;
   data_atualizacao: string;
+  votos_uteis?: number;
+  votos_nao_uteis?: number;
+  /** `true` = útil, `false` = não útil, `null` = o usuário ainda não votou. */
+  meu_voto?: boolean | null;
+}
+
+export interface ApiCategoriaKb {
+  id: number;
+  id_cliente: number;
+  nome: string;
+  descricao: string | null;
+  data_criacao: string;
+  total_artigos: number;
 }
 
 export interface ApiAprovacao {
@@ -145,6 +194,63 @@ export interface ApiAprovacao {
   descricao: string;
   status: string;
   data_solicitacao: string;
+  data_decisao?: string | null;
+  justificativa_aprovador?: string | null;
+}
+
+export interface ApiIntervalo {
+  id: number;
+  dia_semana: number;
+  hora_inicio: string;
+  hora_fim: string;
+}
+
+export interface ApiHorarioComercial {
+  id: number;
+  nome: string;
+  fuso_horario: string;
+  status: string;
+  intervalos: ApiIntervalo[];
+}
+
+export interface ApiFeriado {
+  id: number;
+  id_cliente: number;
+  nome: string;
+  dia: number;
+  mes: number;
+  ano: number | null;
+}
+
+export interface ApiProblema {
+  id: number;
+  titulo: string;
+  descricao: string;
+  id_tecnico_atribuido: number | null;
+  causa_raiz: string | null;
+  solucao_contorno: string | null;
+  status: string;
+  prioridade: string;
+  data_identificacao: string;
+  data_resolucao: string | null;
+  chamados?: ApiVinculoItil[];
+}
+
+export interface ApiMudanca {
+  id: number;
+  titulo: string;
+  descricao: string;
+  justificativa: string;
+  plano_impacto: string;
+  plano_testes: string;
+  plano_retorno: string;
+  tipo_mudanca: string;
+  id_solicitante: number;
+  status: string;
+  janela_inicio: string;
+  janela_fim: string;
+  data_criacao: string;
+  chamados?: ApiVinculoItil[];
 }
 
 export interface ApiNotificacao {

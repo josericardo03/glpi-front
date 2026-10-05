@@ -2,10 +2,9 @@
 
 import { useState, type FormEvent } from 'react';
 import { Clock, Download, FileText, History, Lock, Paperclip, UserRound } from 'lucide-react';
-import { Avatar, Badge, Button, Callout, Checkbox, EmptyState, Field, FileDropzone, Input, Textarea, useToast } from '@/components/ui';
+import { Avatar, Badge, Button, Checkbox, EmptyState, Field, FileDropzone, Input, Textarea, useToast } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import { downloadBlob } from '@/lib/csv';
-import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatDateTime, formatMinutes, plural, timeAgo } from '@/lib/format';
 import type { Anexo, ChamadoDetalhe } from '@/types';
@@ -120,15 +119,11 @@ export function WorklogsTab({ chamado }: { chamado: ChamadoDetalhe }) {
           Registrar
         </Button>
       </form>
-      {!recursos.historicoAtendimento ? (
-        <Callout tone="info">O apontamento é registrado normalmente, mas a API ainda não disponibiliza a listagem dos worklogs deste chamado.</Callout>
-      ) : (
-        <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3 text-sm">
-          <span className="text-brand-muted">Tempo total apontado</span>
-          <strong className="text-brand-darker">{formatMinutes(total)}</strong>
-        </div>
-      )}
-      {!recursos.historicoAtendimento ? null : chamado.worklogs.length === 0 ? (
+      <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3 text-sm">
+        <span className="text-brand-muted">Tempo total apontado</span>
+        <strong className="text-brand-darker">{formatMinutes(total)}</strong>
+      </div>
+      {chamado.worklogs.length === 0 ? (
         <EmptyState icon={<Clock className="h-8 w-8" />} title="Nenhum worklog registrado" />
       ) : (
         <ul className="divide-y divide-brand-border">

@@ -5,7 +5,7 @@ import { useToast } from '@/components/ui/toast';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { getErrorMessage, HTTP_MESSAGES, httpStatus } from '@/lib/api';
 import { plural } from '@/lib/format';
-import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput, MotivoPausa } from '@/types';
+import type { AtualizarStatusInput, ChamadoFiltros, ChamadoInput, CsatInput, MotivoPausa } from '@/types';
 import { chamadosService } from '../services/chamados.service';
 
 type FiltrosSemPagina = Omit<ChamadoFiltros, 'page' | 'pageSize'>;
@@ -107,6 +107,31 @@ export function usePausar(id: number) {
     mutationFn: (body: { motivo: MotivoPausa }) => chamadosService.pausar(id, body),
     invalidate: [...DERIVADOS],
     successMessage: 'SLA pausado e chamado pendenciado.',
+  });
+}
+
+export function useRetomar(id: number) {
+  return useApiMutation({
+    mutationFn: () => chamadosService.retomar(id),
+    invalidate: [...DERIVADOS],
+    successMessage: 'Atendimento retomado; o SLA voltou a contar.',
+  });
+}
+
+export function useVincularAtivo(id: number, onSuccess?: () => void) {
+  return useApiMutation({
+    mutationFn: (ativo: { id: number; nome: string }) => chamadosService.vincularAtivo(id, ativo.id),
+    invalidate: [chamadosKeys.detail(id)],
+    successMessage: (_, ativo) => `${ativo.nome} vinculado ao chamado #${id}.`,
+    onSuccess,
+  });
+}
+
+export function useAvaliarChamado(id: number) {
+  return useApiMutation({
+    mutationFn: (input: Omit<CsatInput, 'chamadoId'>) => chamadosService.avaliar({ ...input, chamadoId: id }),
+    invalidate: [chamadosKeys.detail(id), ['relatorios'], ['dashboard']],
+    successMessage: (nova) => (nova ? 'Obrigado pela sua avaliação!' : 'Este chamado já havia sido avaliado.'),
   });
 }
 

@@ -1,27 +1,32 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
+  Bug,
   CalendarClock,
   CalendarDays,
   CheckCircle2,
   CheckSquare,
   Clock,
   Database,
+  GitPullRequestArrow,
   History,
+  Link2,
   MessageSquare,
   Paperclip,
   PauseCircle,
+  PlayCircle,
   Server,
   ShieldAlert,
   UserRound,
 } from 'lucide-react';
 import {
   Avatar,
+  Badge,
   Button,
   Card,
   CardBody,
@@ -41,12 +46,17 @@ import { getErrorMessage, httpStatus } from '@/lib/api';
 import { formatDateTime, formatMinutes } from '@/lib/format';
 import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
-import type { MotivoPausa, StatusChamado } from '@/types';
+import type { MotivoPausa, StatusChamado, VinculoItil } from '@/types';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SolicitarAprovacaoModal } from '@/features/aprovacoes/solicitar-aprovacao-modal';
-import { useAtualizarStatus, useChamado, usePausar } from '../hooks/use-chamados';
+import { MudancaModal } from '@/features/itil/components/mudanca-modal';
+import { ProblemaModal } from '@/features/itil/components/problema-modal';
+import { statusItil } from '@/features/itil/status';
+import { useAtualizarStatus, useChamado, usePausar, useRetomar } from '../hooks/use-chamados';
 import { isFinalizado, MOTIVOS_PAUSA, PriorityBadge, slaState, STATUS_OPTIONS, StatusBadge, TRANSICOES } from './chamado-badges';
 import { AtribuirModal } from './atribuir-modal';
+import { CsatCard } from './csat-card';
+import { VincularAtivoModal } from './vincular-ativo-modal';
 import { AnexosTab, FollowupsTab, HistoricoTab, WorklogsTab } from './workspace-tabs';
 
 type Tab = 'followups' | 'anexos' | 'worklogs' | 'historico';
@@ -60,10 +70,15 @@ export function ChamadoWorkspace({ id }: { id: number }) {
   const [resolucao, setResolucao] = useState('');
   const [reatribuir, setReatribuir] = useState(false);
   const [aprovacaoOpen, setAprovacaoOpen] = useState(false);
+  const [vincularOpen, setVincularOpen] = useState(false);
+  const [problemaOpen, setProblemaOpen] = useState(false);
+  const [mudancaOpen, setMudancaOpen] = useState(false);
   const atualizar = useAtualizarStatus();
   const pausar = usePausar(id);
-  const { hasRole } = useAuth();
+  const retomar = useRetomar(id);
+  const { hasRole, user } = useAuth();
   const tecnico = hasRole('TECNICO');
+  const gestor = hasRole('GESTOR');
 
   if (isLoading) return <PageLoader />;
   const status = httpStatus(error);
@@ -90,6 +105,10 @@ export function ChamadoWorkspace({ id }: { id: number }) {
   if (isError || !c) return <ErrorState message={getErrorMessage(error)} onRetry={refetch} />;
 
   const finalizado = isFinalizado(c.status);
+  const dono = user?.id === c.solicitanteId;
+  const podeAvaliar = dono && (c.status === 'RESOLVIDO' || c.status === 'CONCLUIDO');
+  const pausado = c.status === 'PENDENTE';
+  const itens = c.itensConfiguracao ?? [];
   const temSla = c.slaRestanteMin !== null && c.slaTotalMin !== null;
   const sla = temSla ? slaState(c.slaRestanteMin!, c.slaTotalMin!) : null;
   const statusOptions = STATUS_OPTIONS.filter((o) => o.value === c.status || TRANSICOES[c.status].includes(o.value));
@@ -97,6 +116,7 @@ export function ChamadoWorkspace({ id }: { id: number }) {
     if (status === c.status) return;
     if (status === 'PENDENTE') return setPausaOpen(true);
     if (status === 'RESOLVIDO') return setResolverOpen(true);
+    if (pausado && status === 'EM_ATENDIMENTO') return retomar.mutate();
     atualizar.mutate({ id, input: { status } });
   };
 
@@ -166,9 +186,9 @@ export function ChamadoWorkspace({ id }: { id: number }) {
               { value: 'followups', label: 'Follow-ups', icon: <MessageSquare className="h-4 w-4" />, count: c.comentarios.length },
               { value: 'anexos', label: 'Anexos', icon: <Paperclip className="h-4 w-4" />, count: c.anexos.length },
               ...(tecnico
-                ? [{ value: 'worklogs' as const, label: 'Worklogs', icon: <Clock className="h-4 w-4" />, count: recursos.historicoAtendimento ? c.worklogs.length : undefined }]
+                ? [{ value: 'worklogs' as const, label: 'Worklogs', icon: <Clock className="h-4 w-4" />, count: c.worklogs.length }]
                 : []),
-              { value: 'historico', label: 'Histórico', icon: <History className="h-4 w-4" /> },
+              { value: 'historico', label: 'Histórico', icon: <History className="h-4 w-4" />, count: c.historico.length },
             ]}
             aria-label="Seções do chamado"
           />
@@ -185,24 +205,56 @@ export function ChamadoWorkspace({ id }: { id: number }) {
         </Card>
 
         <aside className="space-y-6">
+          {(podeAvaliar || c.csat.avaliado) && <CsatCard chamadoId={id} csat={c.csat} podeAvaliar={podeAvaliar} />}
+
           {tecnico && (
           <Card>
             <CardHeader title="Ações Rápidas" />
             <CardBody className="space-y-3">
               <Field label="Alterar Status">
-                {(fid) => <Select id={fid} options={statusOptions} value={c.status} onChange={(e) => setStatus(e.target.value as StatusChamado)} disabled={atualizar.isPending || !TRANSICOES[c.status].length} />}
+                {(fid) => <Select id={fid} options={statusOptions} value={c.status} onChange={(e) => setStatus(e.target.value as StatusChamado)} disabled={atualizar.isPending || retomar.isPending || !TRANSICOES[c.status].length} />}
               </Field>
-              <Button variant="outline" className="w-full" icon={<PauseCircle className="h-4 w-4" />} disabled={!TRANSICOES[c.status].includes('PENDENTE')} onClick={() => setPausaOpen(true)}>
-                Pendenciar (pausar SLA)
-              </Button>
+              {pausado ? (
+                <Button variant="outline" className="w-full" icon={<PlayCircle className="h-4 w-4" />} loading={retomar.isPending} onClick={() => retomar.mutate()}>
+                  Retomar atendimento
+                </Button>
+              ) : (
+                <Button variant="outline" className="w-full" icon={<PauseCircle className="h-4 w-4" />} disabled={!TRANSICOES[c.status].includes('PENDENTE')} onClick={() => setPausaOpen(true)}>
+                  Pendenciar (pausar SLA)
+                </Button>
+              )}
               <Button className="w-full" icon={<CheckCircle2 className="h-4 w-4" />} disabled={!TRANSICOES[c.status].includes('RESOLVIDO')} loading={atualizar.isPending} onClick={() => setResolverOpen(true)}>
                 Resolver Chamado
               </Button>
               <Button variant="ghost" className="w-full" icon={<CheckSquare className="h-4 w-4" />} disabled={finalizado} onClick={() => setAprovacaoOpen(true)}>
                 Solicitar Aprovação
               </Button>
+              {gestor && (
+                <div className="grid grid-cols-2 gap-2 border-t border-brand-border pt-3">
+                  <Button variant="ghost" size="sm" icon={<Bug className="h-4 w-4" />} onClick={() => setProblemaOpen(true)}>
+                    Problema
+                  </Button>
+                  <Button variant="ghost" size="sm" icon={<GitPullRequestArrow className="h-4 w-4" />} onClick={() => setMudancaOpen(true)}>
+                    Mudança
+                  </Button>
+                </div>
+              )}
             </CardBody>
           </Card>
+          )}
+
+          {!tecnico && dono && !finalizado && (
+            <Card>
+              <CardHeader title="Precisa de uma aprovação?" description="Peça a um gestor que autorize este atendimento (compra, acesso, mudança)." />
+              <CardBody>
+                <Button variant="outline" className="w-full" icon={<CheckSquare className="h-4 w-4" />} onClick={() => setAprovacaoOpen(true)}>
+                  Solicitar Aprovação
+                </Button>
+                <Link href="/aprovacoes" className="mt-2 block text-center text-xs font-medium text-brand-primary hover:underline">
+                  Acompanhar minhas solicitações
+                </Link>
+              </CardBody>
+            </Card>
           )}
 
           <Card>
@@ -234,11 +286,21 @@ export function ChamadoWorkspace({ id }: { id: number }) {
             </CardBody>
           </Card>
 
-          {!!c.itensConfiguracao?.length && (
+          {(!!itens.length || tecnico) && (
             <Card>
-              <CardHeader title="Itens de Configuração" />
+              <CardHeader
+                title="Itens de Configuração"
+                actions={
+                  tecnico && !finalizado ? (
+                    <Button variant="ghost" size="sm" icon={<Link2 className="h-4 w-4" />} onClick={() => setVincularOpen(true)}>
+                      Vincular
+                    </Button>
+                  ) : undefined
+                }
+              />
               <CardBody className="space-y-3">
-                {c.itensConfiguracao.map((ic) => (
+                {!itens.length && <p className="text-xs text-brand-muted">Nenhum ativo vinculado a este chamado.</p>}
+                {itens.map((ic) => (
                   <Link key={ic.id} href={`/ativos/${ic.id}`} className="flex items-start gap-2.5 rounded-md p-1 hover:bg-slate-50">
                     <Database className="mt-0.5 h-4 w-4 text-brand-muted" />
                     <div>
@@ -246,6 +308,20 @@ export function ChamadoWorkspace({ id }: { id: number }) {
                       <p className="text-xs text-brand-muted">{ic.detalhe}</p>
                     </div>
                   </Link>
+                ))}
+              </CardBody>
+            </Card>
+          )}
+
+          {(!!c.problemas.length || !!c.mudancas.length) && (
+            <Card>
+              <CardHeader title="Problemas e Mudanças" />
+              <CardBody className="space-y-3">
+                {c.problemas.map((p) => (
+                  <VinculoItilItem key={`p${p.id}`} href={tecnico ? `/problemas?id=${p.id}` : undefined} icon={<Bug className="mt-0.5 h-4 w-4 text-brand-muted" />} rotulo={`Problema #${p.id}`} vinculo={p} />
+                ))}
+                {c.mudancas.map((m) => (
+                  <VinculoItilItem key={`m${m.id}`} href={tecnico ? `/mudancas?id=${m.id}` : undefined} icon={<GitPullRequestArrow className="mt-0.5 h-4 w-4 text-brand-muted" />} rotulo={`Mudança #${m.id}`} vinculo={m} />
                 ))}
               </CardBody>
             </Card>
@@ -302,7 +378,14 @@ export function ChamadoWorkspace({ id }: { id: number }) {
         </Field>
       </Modal>
 
-      {tecnico && <SolicitarAprovacaoModal open={aprovacaoOpen} onClose={() => setAprovacaoOpen(false)} chamadoId={id} />}
+      {(tecnico || dono) && <SolicitarAprovacaoModal open={aprovacaoOpen} onClose={() => setAprovacaoOpen(false)} chamadoId={id} />}
+      {tecnico && <VincularAtivoModal chamadoId={id} open={vincularOpen} onClose={() => setVincularOpen(false)} vinculados={itens.map((ic) => ic.id)} />}
+      {gestor && (
+        <>
+          <ProblemaModal open={problemaOpen} onClose={() => setProblemaOpen(false)} chamado={{ id, titulo: c.titulo, descricao: c.descricao }} />
+          <MudancaModal open={mudancaOpen} onClose={() => setMudancaOpen(false)} chamado={{ id, titulo: c.titulo }} />
+        </>
+      )}
 
       <AtribuirModal
         open={reatribuir}
@@ -313,5 +396,24 @@ export function ChamadoWorkspace({ id }: { id: number }) {
         onConfirm={(input) => atualizar.mutate({ id, input }, { onSuccess: () => setReatribuir(false) })}
       />
     </>
+  );
+}
+
+function VinculoItilItem({ href, icon, rotulo, vinculo }: { href?: string; icon: ReactNode; rotulo: string; vinculo: VinculoItil }) {
+  const s = statusItil(vinculo.status);
+  const conteudo = (
+    <>
+      {icon}
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted">{rotulo}</p>
+        <p className="truncate text-sm font-semibold text-brand-darker" title={vinculo.titulo}>{vinculo.titulo}</p>
+        <Badge tone={s.tone} className="mt-1">{s.label}</Badge>
+      </div>
+    </>
+  );
+  return href ? (
+    <Link href={href} className="flex items-start gap-2.5 rounded-md p-1 hover:bg-slate-50">{conteudo}</Link>
+  ) : (
+    <div className="flex items-start gap-2.5 p-1">{conteudo}</div>
   );
 }

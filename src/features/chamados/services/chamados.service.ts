@@ -1,7 +1,8 @@
+import { isAxiosError } from 'axios';
 import { api } from '@/lib/api';
 import { currentTenantId } from '@/lib/backend/lookups';
 import type { ApiChamado, ApiChamadoDetalhe } from '@/lib/backend/types';
-import { data, matches, request } from '@/lib/http';
+import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type {
@@ -12,6 +13,7 @@ import type {
   ChamadoFiltros,
   ChamadoInput,
   Comentario,
+  CsatInput,
   MotivoPausa,
   PausaSla,
   Worklog,
@@ -21,14 +23,13 @@ import { calcularPrioridade, categoriaAceitaTipo, politicaAplicavel } from '../u
 import { STATUS_LABEL, TRANSICOES } from '../utils/transicoes';
 import { listarChamados, loadCtx, toChamado, toChamadoDetalhe } from './chamado.mapper';
 
-const toResumo = ({ comentarios, worklogs, pausas, anexos, historico, ...c }: ChamadoDetalhe): Chamado => c;
+const toResumo = ({ comentarios, worklogs, pausas, anexos, historico, problemas, mudancas, csat, ...c }: ChamadoDetalhe): Chamado => c;
 const find = (id: number) => {
   const c = db.chamados.find((x) => x.id === id);
   if (!c) throw new Error('Chamado não encontrado (HTTP 404).');
   return c;
 };
 const nowIso = () => new Date().toISOString();
-
 function aplicarFiltros(rows: Chamado[], f: ChamadoFiltros, categoriaPai: (id: number) => number | null | undefined) {
   return rows.filter(
     (c) =>
@@ -66,7 +67,7 @@ export const chamadosService = {
   triagem: (f: ChamadoFiltros) =>
     request<Chamado[]>(
       async () => {
-        const [rows, ctx] = await Promise.all([data(api.get<ApiChamado[]>('/triagem')), loadCtx()]);
+        const [rows, ctx] = await Promise.all([getAll<ApiChamado>('/triagem', TETO_PAGINA.triagem), loadCtx()]);
         return aplicarFiltros(
           rows.map((r) => toChamado(r, ctx)),
           { ...f, status: '' },
@@ -98,6 +99,7 @@ export const chamadosService = {
             tipo: input.tipo,
             origem: input.origem,
             prioridade: calcularPrioridade(input.impacto, input.urgencia),
+            ...(input.ativoAfetadoId && { id_ativo_afetado: input.ativoAfetadoId }),
           }),
         );
         return { id: r.id };
@@ -134,6 +136,10 @@ export const chamadosService = {
           pausas: [],
           anexos: [],
           historico: [{ id: 1, descricao: 'Chamado aberto', autor: solicitante.nome, criadoEm: nowIso() }],
+          itensConfiguracao: db.ativos.filter((a) => a.id === input.ativoAfetadoId).map((a) => ({ id: a.id, nome: a.nome, detalhe: a.codigo })),
+          problemas: [],
+          mudancas: [],
+          csat: { avaliado: false },
         };
         db.chamados.unshift(c);
         return toResumo(c);
@@ -228,6 +234,56 @@ export const chamadosService = {
         c.slaPausado = true;
         c.historico.push({ id: uid(), descricao: `SLA pausado: ${body.motivo}`, autor: 'Você', criadoEm: nowIso() });
         return p;
+      },
+    ),
+
+  retomar: (id: number) =>
+    request<unknown>(
+      () => data(api.patch(`/chamados/${id}/pausas/retomar`)),
+      () => {
+        const c = find(id);
+        if (c.status !== 'PENDENTE') throw new Error('O chamado não está pausado (HTTP 400).');
+        const pausa = c.pausas.find((p) => !p.finalizadaEm);
+        if (pausa) pausa.finalizadaEm = nowIso();
+        c.status = 'EM_ATENDIMENTO';
+        c.slaPausado = false;
+        c.historico.push({ id: uid(), descricao: 'Atendimento retomado; SLA voltou a contar', autor: 'Você', criadoEm: nowIso() });
+        return toResumo(c);
+      },
+    ),
+
+  vincularAtivo: (id: number, ativoId: number) =>
+    request<unknown>(
+      () => data(api.post(`/chamados/${id}/ativos`, { id_ativo: ativoId })),
+      () => {
+        const c = find(id);
+        const a = db.ativos.find((x) => x.id === ativoId);
+        if (!a) throw new Error('Ativo não encontrado (HTTP 404).');
+        c.itensConfiguracao ??= [];
+        if (c.itensConfiguracao.some((ic) => ic.id === ativoId)) throw new Error('Este ativo já está vinculado ao chamado (HTTP 409).');
+        c.itensConfiguracao.push({ id: a.id, nome: a.nome, detalhe: a.codigo });
+        return a;
+      },
+    ),
+
+  /** Retorna `false` quando o chamado já havia sido avaliado (HTTP 409). */
+  avaliar: ({ chamadoId, nota, comentario }: CsatInput) =>
+    request<boolean>(
+      async () => {
+        try {
+          await api.post('/pesquisas-csat', { id_chamado: chamadoId, nota_satisfacao: nota, ...(comentario?.trim() && { comentarios: comentario.trim() }) });
+          return true;
+        } catch (err) {
+          if (isAxiosError(err) && err.response?.status === 409) return false;
+          throw err;
+        }
+      },
+      () => {
+        const c = find(chamadoId);
+        if (c.status !== 'RESOLVIDO' && c.status !== 'CONCLUIDO') throw new Error('Só é possível avaliar chamados resolvidos ou concluídos (HTTP 422).');
+        if (c.csat.avaliado) return false;
+        c.csat = { avaliado: true, nota, comentario: comentario?.trim() || null, respondidoEm: nowIso() };
+        return true;
       },
     ),
 

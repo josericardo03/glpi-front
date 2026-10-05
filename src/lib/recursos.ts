@@ -7,12 +7,10 @@ import { USE_MOCKS } from './http';
 export const recursos = {
   /** Atribuição de técnico/grupo a um chamado. */
   atribuicaoChamado: USE_MOCKS,
-  /** Listagem de worklogs e pausas do chamado (a API só permite registrar). */
-  historicoAtendimento: USE_MOCKS,
   /** Listagem de membros das equipes de suporte. */
   membrosGrupo: USE_MOCKS,
-  /** Edição de políticas de SLA e horários comerciais. */
-  edicaoSla: USE_MOCKS,
+  /** Ações automáticas das políticas de SLA (notificar gestor, alerta preventivo). */
+  alertasSla: USE_MOCKS,
   /** Especificações técnicas e manutenções de ativos. */
   detalhesAtivo: USE_MOCKS,
   /** Fuso horário, cor de destaque e upload de logotipo no branding. */
@@ -21,6 +19,4 @@ export const recursos = {
   satisfacao: USE_MOCKS,
   /** Edição do próprio perfil por usuários não administradores. */
   autoatendimentoPerfil: USE_MOCKS,
-  /** Contagem de votos "útil / não útil" dos artigos da base de conhecimento. */
-  contagemVotosKb: USE_MOCKS,
 } as const;

@@ -17,13 +17,56 @@ export interface PoliticaSla {
   alertaPercentual: number | null;
 }
 
-/** Tabela `horarios_comerciais` */
+export interface PoliticaSlaInput {
+  nome: string;
+  prioridade: Prioridade;
+  tipoAlvo: TipoChamado | 'AMBOS';
+  tempoRespostaMin: number;
+  tempoSolucaoMin: number;
+  horarioComercialId: ID;
+  ativa: boolean;
+}
+
+/** Tabela `intervalos_horarios`; `diaSemana` vai de 0 (domingo) a 6 (sábado), horas em HH:mm. */
+export interface IntervaloHorario {
+  id: ID;
+  diaSemana: number;
+  inicio: string;
+  fim: string;
+}
+
+/** Tabela `horarios_comerciais`. */
 export interface HorarioComercial {
   id: ID;
   nome: string;
-  turnos: { dias: string; inicio: string; fim: string }[];
-  feriados: { data: string; descricao: string }[];
+  fusoHorario: string;
+  ativo: boolean;
+  intervalos: IntervaloHorario[];
 }
+
+export interface HorarioInput {
+  nome: string;
+  fusoHorario: string;
+  ativo: boolean;
+}
+
+export interface IntervaloInput {
+  horarioId: ID;
+  diaSemana: number;
+  inicio: string;
+  fim: string;
+}
+
+/** Tabela `feriados`; sem `ano`, o feriado se repete todo ano. */
+export interface Feriado {
+  id: ID;
+  nome: string;
+  dia: number;
+  mes: number;
+  ano: number | null;
+}
+
+export type FeriadoInput = Omit<Feriado, 'id'>;
 
 /** Tabela `tenant_branding` */
 export interface Branding {
@@ -106,4 +149,11 @@ export interface AuditoriaFiltros {
   pageSize?: number;
   search?: string;
   acao?: AcaoAuditoria | '';
+  /** Filtros aplicados pela API (`GET /admin/auditoria`). Datas em YYYY-MM-DD. */
+  dataInicio?: string;
+  dataFim?: string;
+  usuarioId?: ID | '';
+  codigoAcao?: string;
 }
+
+export type AuditoriaFiltrosApi = Pick<AuditoriaFiltros, 'dataInicio' | 'dataFim' | 'usuarioId' | 'codigoAcao'>;

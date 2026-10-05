@@ -8,8 +8,9 @@ import { useChamados } from '@/features/chamados/hooks/use-chamados';
 import { isFinalizado } from '@/features/chamados/components/chamado-badges';
 import { PAPEL_LABEL, perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import { textoInvalido } from '@/lib/validation';
+import { useMudancas } from '@/features/itil/use-itil';
 import type { AprovacaoInput } from '@/types';
-import { useCriarAprovacao, useMudancas } from './use-aprovacoes';
+import { useCriarAprovacao } from './use-aprovacoes';
 
 type Origem = 'CHAMADO' | 'MUDANCA';
 
@@ -18,17 +19,20 @@ interface Props {
   onClose: () => void;
   /** Quando informado, a solicitação fica presa a este chamado. */
   chamadoId?: number;
+  /** Quando informado, a solicitação fica presa a esta mudança. */
+  mudancaId?: number;
 }
 
-export function SolicitarAprovacaoModal({ open, onClose, chamadoId }: Props) {
-  const { user } = useAuth();
+export function SolicitarAprovacaoModal({ open, onClose, chamadoId, mudancaId }: Props) {
+  const { user, hasRole } = useAuth();
+  const podeMudanca = hasRole('TECNICO');
   const [origem, setOrigem] = useState<Origem>('CHAMADO');
   const [alvoId, setAlvoId] = useState('');
   const [aprovadorId, setAprovadorId] = useState('');
   const [descricao, setDescricao] = useState('');
   const [tentou, setTentou] = useState(false);
 
-  const fixo = chamadoId !== undefined;
+  const fixo = chamadoId !== undefined || mudancaId !== undefined;
   const { data: usuarios } = useUsuarios();
   const { data: chamados } = useChamados({});
   const { data: mudancas } = useMudancas(open && !fixo && origem === 'MUDANCA');
@@ -71,9 +75,12 @@ export function SolicitarAprovacaoModal({ open, onClose, chamadoId }: Props) {
     setTentou(true);
     if (!valido) return;
     const base = { descricao: descricao.trim(), aprovadorId: Number(aprovadorId) };
-    const input: AprovacaoInput = fixo
-      ? { ...base, chamadoId }
-      : origem === 'CHAMADO'
+    const input: AprovacaoInput =
+      chamadoId !== undefined
+        ? { ...base, chamadoId }
+        : mudancaId !== undefined
+          ? { ...base, mudancaId }
+          : origem === 'CHAMADO'
         ? { ...base, chamadoId: Number(alvoId) }
         : { ...base, mudancaId: Number(alvoId) };
     criar.mutate(input);
@@ -84,7 +91,15 @@ export function SolicitarAprovacaoModal({ open, onClose, chamadoId }: Props) {
       open={open}
       onClose={fechar}
       title="Solicitar aprovação"
-      description={fixo ? `A solicitação ficará vinculada ao chamado #${chamadoId}.` : 'Envie um chamado ou uma mudança para aprovação de um gestor.'}
+      description={
+        chamadoId !== undefined
+          ? `A solicitação ficará vinculada ao chamado #${chamadoId}.`
+          : mudancaId !== undefined
+            ? `A solicitação ficará vinculada à mudança #${mudancaId}.`
+            : podeMudanca
+              ? 'Envie um chamado ou uma mudança para aprovação de um gestor.'
+              : 'Escolha um dos seus chamados em aberto e o gestor que deve aprová-lo.'
+      }
       size="sm"
       footer={
         <>
@@ -100,6 +115,7 @@ export function SolicitarAprovacaoModal({ open, onClose, chamadoId }: Props) {
       <div className="space-y-4">
         {!fixo && (
           <>
+            {podeMudanca && (
             <div>
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">Vincular a</p>
               <ToggleGroup
@@ -116,6 +132,7 @@ export function SolicitarAprovacaoModal({ open, onClose, chamadoId }: Props) {
                 ]}
               />
             </div>
+            )}
             <Field label={origem === 'CHAMADO' ? 'Chamado' : 'Mudança'} required error={tentou ? erros.alvo : undefined}>
               {(id) => (
                 <Select

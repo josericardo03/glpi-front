@@ -4,5 +4,6 @@ export * from './chamado';
 export * from './organizacao';
 export * from './ativo';
 export * from './operacao';
+export * from './itil';
 export * from './admin';
 export * from './dashboard';

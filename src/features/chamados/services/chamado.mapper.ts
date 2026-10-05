@@ -1,10 +1,11 @@
 import { api } from '@/lib/api';
 import { byId, lookups } from '@/lib/backend/lookups';
-import { data } from '@/lib/http';
+import { getAll, TETO_PAGINA } from '@/lib/http';
 import { queryClient } from '@/lib/query-client';
 import { PAPEL_LABEL } from '@/lib/backend/usuario.mapper';
 import type { ApiCategoria, ApiChamado, ApiChamadoDetalhe, ApiGrupo, ApiUsuario } from '@/lib/backend/types';
-import type { Chamado, ChamadoDetalhe, HistoricoEvento, Nivel, Origem, Prioridade, StatusChamado, TipoChamado } from '@/types';
+import type { Chamado, ChamadoDetalhe, HistoricoEvento, MotivoPausa, Nivel, Origem, Prioridade, StatusChamado, TipoChamado } from '@/types';
+import { MOTIVO_PAUSA_LABEL, STATUS_LABEL } from '../utils/transicoes';
 
 export interface ChamadoCtx {
   usuarios: Map<number, ApiUsuario>;
@@ -22,7 +23,7 @@ export async function loadCtx(): Promise<ChamadoCtx> {
  * A chave fica sob ['chamados'], então as mutações de chamado também a invalidam.
  */
 export const chamadosApi = () =>
-  queryClient.fetchQuery({ queryKey: ['chamados', 'raw'], queryFn: () => data(api.get<ApiChamado[]>('/chamados')), staleTime: 15_000 });
+  queryClient.fetchQuery({ queryKey: ['chamados', 'raw'], queryFn: () => getAll<ApiChamado>('/chamados', TETO_PAGINA.chamados), staleTime: 15_000 });
 
 /** Chamados já mapeados para o modelo da interface. */
 export async function listarChamados(): Promise<Chamado[]> {
@@ -85,15 +86,37 @@ export function toChamado(c: ApiChamado, ctx: ChamadoCtx): Chamado {
   };
 }
 
-/** A API não expõe o histórico de status; a linha do tempo é reconstruída a partir das datas do chamado. */
+const rotuloStatus = (s: string | null) => (s ? (STATUS_LABEL[s as StatusChamado] ?? s) : '—');
+
+/** Linha do tempo: abertura, trocas de status (com o motivo quando é pausa) e retomadas. */
+function montarHistorico(c: ApiChamadoDetalhe, ctx: ChamadoCtx, solicitante: string): HistoricoEvento[] {
+  const nome = (id: number | null) => (id ? (ctx.usuarios.get(id)?.nome ?? `Usuário #${id}`) : 'Sistema');
+  const motivoPorOrigem = new Map(c.pausas_sla.map((p) => [p.id_historico_origem, p.motivo_pausa]));
+  const eventos: HistoricoEvento[] = [{ id: 0, descricao: 'Chamado aberto', autor: solicitante, criadoEm: c.data_abertura }];
+  c.historico_status_chamados.forEach((h) => {
+    const motivo = motivoPorOrigem.get(h.id);
+    let descricao = `Status alterado: ${rotuloStatus(h.status_anterior)} → ${rotuloStatus(h.status_novo)}`;
+    if (motivo) descricao += ` (${MOTIVO_PAUSA_LABEL[motivo as MotivoPausa] ?? motivo})`;
+    if (h.status_novo === 'RESOLVIDO' && c.resolucao) descricao += `. Resolução: ${c.resolucao}`;
+    eventos.push({ id: h.id, descricao, autor: nome(h.id_usuario_alterou), criadoEm: h.data_alteracao });
+  });
+  c.pausas_sla
+    .filter((p) => p.data_retomada)
+    .forEach((p) => eventos.push({ id: -p.id, descricao: 'SLA retomado após pausa', autor: 'Sistema', criadoEm: p.data_retomada! }));
+  return eventos.sort((a, b) => a.criadoEm.localeCompare(b.criadoEm));
+}
+
 export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): ChamadoDetalhe {
   const base = toChamado(c, ctx);
-  const historico: HistoricoEvento[] = [{ id: 1, descricao: 'Chamado aberto', autor: base.solicitanteNome, criadoEm: c.data_abertura }];
-  if (c.data_resolucao) historico.push({ id: 2, descricao: `Resolvido${c.resolucao ? `: ${c.resolucao}` : ''}`, autor: base.tecnicoNome ?? 'Equipe de suporte', criadoEm: c.data_resolucao });
-  if (c.data_fechamento) historico.push({ id: 3, descricao: 'Chamado concluído', autor: 'Sistema', criadoEm: c.data_fechamento });
 
   return {
     ...base,
+    itensConfiguracao: c.ativos.map((a) => ({ id: a.id, nome: a.nome, detalhe: a.codigo_patrimonio })),
+    problemas: c.problemas,
+    mudancas: c.mudancas,
+    csat: c.csat.avaliado
+      ? { avaliado: true, nota: c.csat.nota_satisfacao, comentario: c.csat.comentarios, respondidoEm: c.csat.data_resposta }
+      : { avaliado: false },
     comentarios: c.comentarios_chamados
       .map((cm) => {
         const autor = ctx.usuarios.get(cm.id_autor);
@@ -118,8 +141,15 @@ export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): Chamado
       enviadoPor: '—',
       criadoEm: a.data_upload,
     })),
-    worklogs: [],
-    pausas: [],
-    historico: historico.sort((a, b) => a.criadoEm.localeCompare(b.criadoEm)),
+    worklogs: c.worklogs.map((w) => ({
+      id: w.id,
+      chamadoId: w.id_chamado,
+      tecnicoNome: ctx.usuarios.get(w.id_tecnico)?.nome ?? `Usuário #${w.id_tecnico}`,
+      descricao: w.descricao_atividade,
+      minutos: w.tempo_trabalhado_min,
+      realizadoEm: w.data_execucao,
+    })),
+    pausas: c.pausas_sla.map((p) => ({ id: p.id, chamadoId: p.id_chamado, motivo: p.motivo_pausa, iniciadaEm: p.data_pausa, finalizadaEm: p.data_retomada })),
+    historico: montarHistorico(c, ctx, base.solicitanteNome),
   };
 }

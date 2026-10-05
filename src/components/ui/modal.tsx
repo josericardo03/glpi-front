@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from './button';
 
 interface ModalProps {
   open: boolean;
@@ -102,5 +103,35 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       </div>
     </div>,
     document.body,
+  );
+}
+
+interface ConfirmModalProps {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: ReactNode;
+  children: ReactNode;
+  confirmLabel?: string;
+  loading?: boolean;
+}
+
+/** Confirmação de ação destrutiva. */
+export function ConfirmModal({ open, onClose, onConfirm, title, children, confirmLabel = 'Excluir', loading }: ConfirmModalProps) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title={title}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button variant="danger" loading={loading} onClick={onConfirm}>{confirmLabel}</Button>
+        </>
+      }
+    >
+      <div className="text-sm text-slate-700">{children}</div>
+    </Modal>
   );
 }

@@ -1,6 +1,6 @@
 import { api } from '@/lib/api';
 import type { ApiNotificacao } from '@/lib/backend/types';
-import { data, request } from '@/lib/http';
+import { getAll, request, TETO_PAGINA } from '@/lib/http';
 import * as db from '@/mocks/db';
 import type { Notificacao, TipoNotificacao } from '@/types';
 
@@ -38,7 +38,7 @@ export const notificacoesService = {
   list: () =>
     request<Notificacao[]>(
       async () =>
-        (await data(api.get<ApiNotificacao[]>('/notificacoes'))).map(toNotificacao).sort((a, b) => b.criadaEm.localeCompare(a.criadaEm)),
+        (await getAll<ApiNotificacao>('/notificacoes', TETO_PAGINA.notificacoes)).map(toNotificacao).sort((a, b) => b.criadaEm.localeCompare(a.criadaEm)),
       () => [...db.notificacoes].sort((a, b) => b.criadaEm.localeCompare(a.criadaEm)),
     ),
 

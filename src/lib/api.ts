@@ -35,14 +35,19 @@ export const HTTP_MESSAGES: Record<number, string> = {
   403: 'Você não tem permissão para executar esta ação.',
   404: 'Recurso não encontrado.',
   409: 'Conflito: o registro já existe ou foi alterado por outro usuário.',
+  413: 'Arquivo acima do limite de 20 MB.',
   422: 'Dados inválidos. Verifique os campos do formulário.',
+  429: 'Muitas tentativas em sequência. Aguarde um minuto e tente novamente.',
   500: 'Erro interno no servidor.',
+  503: 'Serviço indisponível: o banco de dados está fora do ar. Tente novamente em instantes.',
 };
 
 export const httpStatus = (error: unknown) => (axios.isAxiosError(error) ? error.response?.status : undefined);
 
 export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    if (status === 429 || status === 503) return HTTP_MESSAGES[status]!;
     const data = error.response?.data as { message?: string | string[] } | undefined;
     const msg = Array.isArray(data?.message) ? data.message.join(', ') : data?.message;
     return msg || HTTP_MESSAGES[error.response?.status ?? 0] || 'Falha de comunicação com o servidor.';

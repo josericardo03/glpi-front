@@ -1,4 +1,4 @@
-import type { StatusChamado } from '@/types';
+import type { MotivoPausa, StatusChamado } from '@/types';
 
 export const STATUS_LABEL: Record<StatusChamado, string> = {
   NOVO: 'Novo',
@@ -6,6 +6,13 @@ export const STATUS_LABEL: Record<StatusChamado, string> = {
   PENDENTE: 'Pendente',
   RESOLVIDO: 'Resolvido',
   CONCLUIDO: 'Concluído',
+};
+
+export const MOTIVO_PAUSA_LABEL: Record<MotivoPausa, string> = {
+  AGUARDANDO_SOLICITANTE: 'Aguardando solicitante',
+  AGUARDANDO_TERCEIRO: 'Aguardando terceiro',
+  FORNECEDOR_EXTERNO: 'Fornecedor externo',
+  MANUTENCAO_PROGRAMADA: 'Manutenção programada',
 };
 
 /** Máquina de estados do backend (`assertTransicao`). */

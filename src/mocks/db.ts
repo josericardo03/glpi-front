@@ -7,14 +7,17 @@ import type {
   ChamadoDetalhe,
   Cliente,
   Departamento,
+  Feriado,
   GrupoSuporte,
   HorarioComercial,
   Integracao,
   KbArtigo,
   KbCategoria,
+  Mudanca,
   Notificacao,
   PoliticaSla,
   Prioridade,
+  Problema,
   StatusChamado,
   Tecnico,
   Usuario,
@@ -179,6 +182,9 @@ export const chamados: ChamadoDetalhe[] = seedChamados.map(
         { id: 1, descricao: 'Chamado aberto via portal', autor: nomeUsuario(solicitanteId)!, criadoEm: ago(abertoHa) },
         ...(tecnicoId ? [{ id: 2, descricao: `Atribuído a ${nomeUsuario(tecnicoId)}`, autor: 'Sistema (Auto)', criadoEm: ago(abertoHa - 10) }] : []),
       ],
+      problemas: i === 0 ? [{ id: 1, titulo: 'Timeouts intermitentes no storage principal', status: 'SOB_INVESTIGACAO' }] : [],
+      mudancas: [],
+      csat: status === 'CONCLUIDO' && i % 2 === 0 ? { avaliado: true, nota: 5, comentario: 'Atendimento rápido.', respondidoEm: ago(30) } : { avaliado: false },
     };
   },
 );
@@ -229,11 +235,11 @@ export const ativos: AtivoDetalhe[] = [
 }));
 
 export const aprovacoes: Aprovacao[] = [
-  { id: 4402, titulo: 'Upgrade de Hardware - Memória RAM', descricao: 'Substituição de Memória RAM para a estação de trabalho do Depto. Financeiro.', origem: 'CHAMADO', chamadoId: 10256, mudancaId: null, solicitanteNome: 'Marcos Vinícius', prioridade: 'MEDIA', risco: 'BAIXO', custoEstimado: 1200, solicitadoEm: ago(120), status: 'PENDENTE' },
-  { id: 4403, titulo: 'Janela de manutenção - Cluster SQL', descricao: 'Aplicação de patch cumulativo no cluster SQL de produção durante a madrugada de sábado.', origem: 'MUDANCA', chamadoId: null, mudancaId: 881, solicitanteNome: 'Ricardo Andrade', prioridade: 'ALTA', risco: 'ALTO', custoEstimado: null, solicitadoEm: ago(300), status: 'PENDENTE' },
-  { id: 4404, titulo: 'Licença Adobe Creative Cloud', descricao: 'Aquisição de 3 licenças adicionais para a equipe de Marketing.', origem: 'CHAMADO', chamadoId: 10246, mudancaId: null, solicitanteNome: 'Juliana Costa', prioridade: 'MEDIA', risco: 'BAIXO', custoEstimado: 4500, solicitadoEm: ago(1440), status: 'PENDENTE' },
-  { id: 4405, titulo: 'Migração do firewall de borda', descricao: 'Substituição do firewall legado por appliance de nova geração com HA.', origem: 'MUDANCA', chamadoId: null, mudancaId: 882, solicitanteNome: 'Jorge Santos', prioridade: 'CRITICA', risco: 'ALTO', custoEstimado: 85000, solicitadoEm: ago(2880), status: 'PENDENTE' },
-];
+  { id: 4402, titulo: 'Upgrade de Hardware - Memória RAM', descricao: 'Substituição de Memória RAM para a estação de trabalho do Depto. Financeiro.', origem: 'CHAMADO', chamadoId: 10256, mudancaId: null, solicitanteNome: 'Marcos Vinícius', aprovadorNome: 'Mariana Souza', prioridade: 'MEDIA', risco: 'BAIXO', custoEstimado: 1200, solicitadoEm: ago(120), status: 'PENDENTE' },
+  { id: 4403, titulo: 'Janela de manutenção - Cluster SQL', descricao: 'Aplicação de patch cumulativo no cluster SQL de produção durante a madrugada de sábado.', origem: 'MUDANCA', chamadoId: null, mudancaId: 881, solicitanteNome: 'Ricardo Andrade', aprovadorNome: 'Mariana Souza', prioridade: 'ALTA', risco: 'ALTO', custoEstimado: null, solicitadoEm: ago(300), status: 'PENDENTE' },
+  { id: 4404, titulo: 'Licença Adobe Creative Cloud', descricao: 'Aquisição de 3 licenças adicionais para a equipe de Marketing.', origem: 'CHAMADO', chamadoId: 10246, mudancaId: null, solicitanteNome: 'Juliana Costa', aprovadorNome: 'Mariana Souza', prioridade: 'MEDIA', risco: 'BAIXO', custoEstimado: 4500, solicitadoEm: ago(1440), status: 'APROVADA', decididoEm: ago(600), justificativaAprovador: 'Dentro do orçamento do trimestre.' },
+  { id: 4405, titulo: 'Migração do firewall de borda', descricao: 'Substituição do firewall legado por appliance de nova geração com HA.', origem: 'MUDANCA', chamadoId: null, mudancaId: 882, solicitanteNome: 'Jorge Santos', aprovadorNome: 'Mariana Souza', prioridade: 'CRITICA', risco: 'ALTO', custoEstimado: 85000, solicitadoEm: ago(2880), status: 'PENDENTE' },
+].map((a) => ({ decididoEm: null, justificativaAprovador: null, ...a }) as Aprovacao);
 
 export const notificacoes: Notificacao[] = [
   { id: 1, tipo: 'CHAMADO', titulo: 'Novo Chamado: Incidente de Rede Crítico', mensagem: 'O servidor principal da filial Norte reportou queda de conexão. SLA de resposta expira em 15 minutos.', link: '/chamados/10245', urgente: false, lida: false, criadaEm: ago(5) },
@@ -287,6 +293,8 @@ export const kbArtigos: KbArtigo[] = [
   conteudoMarkdown: mfaMarkdown,
   categoriaId: categoriaId as number,
   categoriaNome: kbCategorias.find((c) => c.id === categoriaId)!.nome,
+  status: 'PUBLICADO' as const,
+  autorId: 1,
   autorNome: 'Marcos Oliveira',
   autorCargo: 'Especialista de Segurança TI',
   visualizacoes: visualizacoes as number,
@@ -314,16 +322,34 @@ export const horariosComerciais: HorarioComercial[] = [
   {
     id: 1,
     nome: 'Horário Comercial Padrão',
-    turnos: [
-      { dias: 'Segunda à Sexta', inicio: '08:00', fim: '18:00' },
-      { dias: 'Sábados', inicio: '09:00', fim: '13:00' },
-    ],
-    feriados: [
-      { data: '2026-11-02', descricao: 'Finados' },
-      { data: '2026-11-15', descricao: 'Proclamação da República' },
-      { data: '2026-12-25', descricao: 'Natal' },
+    fusoHorario: 'America/Cuiaba',
+    ativo: true,
+    intervalos: [
+      ...[1, 2, 3, 4, 5].flatMap((diaSemana) => [
+        { id: diaSemana * 10 + 1, diaSemana, inicio: '08:00', fim: '12:00' },
+        { id: diaSemana * 10 + 2, diaSemana, inicio: '13:00', fim: '18:00' },
+      ]),
+      { id: 61, diaSemana: 6, inicio: '09:00', fim: '13:00' },
     ],
   },
+];
+
+export const feriados: Feriado[] = [
+  { id: 1, nome: 'Confraternização Universal', dia: 1, mes: 1, ano: null },
+  { id: 2, nome: 'Finados', dia: 2, mes: 11, ano: null },
+  { id: 3, nome: 'Proclamação da República', dia: 15, mes: 11, ano: null },
+  { id: 4, nome: 'Natal', dia: 25, mes: 12, ano: null },
+  { id: 5, nome: 'Ponto facultativo', dia: 24, mes: 12, ano: 2026 },
+];
+
+export const problemas: Problema[] = [
+  { id: 1, titulo: 'Quedas recorrentes da VPN corporativa', descricao: 'Usuários remotos perdem a conexão a cada 40 minutos.', prioridade: 'ALTA', status: 'SOB_INVESTIGACAO', causaRaiz: null, solucaoContorno: 'Reconectar pelo cliente alternativo.', tecnicoId: null, tecnicoNome: 'Ana Costa', identificadoEm: ago(60 * 24 * 3), resolvidoEm: null },
+  { id: 2, titulo: 'Lentidão no ERP no fechamento mensal', descricao: 'Consultas de estoque passam de 30 segundos no último dia útil.', prioridade: 'MEDIA', status: 'ERRO_CONHECIDO', causaRaiz: 'Índice ausente na tabela de movimentações.', solucaoContorno: null, tecnicoId: null, tecnicoNome: 'Bruno Lima', identificadoEm: ago(60 * 24 * 9), resolvidoEm: null },
+];
+
+export const mudancas: Mudanca[] = [
+  { id: 881, titulo: 'Janela de manutenção - Cluster SQL', descricao: 'Aplicar atualização cumulativa no cluster de banco.', justificativa: 'Correções de segurança críticas.', planoImpacto: 'ERP indisponível por até 30 minutos.', planoTestes: 'Executar rotina de validação do ERP.', planoRetorno: 'Restaurar snapshot pré-atualização.', tipo: 'NORMAL', status: 'RASCUNHO', solicitanteNome: 'Ana Costa', janelaInicio: ahead(60 * 24 * 2), janelaFim: ahead(60 * 24 * 2 + 120), criadaEm: ago(60 * 5) },
+  { id: 882, titulo: 'Migração do firewall de borda', descricao: 'Substituir o firewall de borda pelo novo cluster.', justificativa: 'Fim do suporte do equipamento atual.', planoImpacto: 'Internet indisponível por 15 minutos.', planoTestes: 'Testes de navegação e VPN.', planoRetorno: 'Reconectar o equipamento antigo.', tipo: 'EMERGENCIAL', status: 'APROVACAO', solicitanteNome: 'Bruno Lima', janelaInicio: ahead(60 * 6), janelaFim: ahead(60 * 7), criadaEm: ago(60 * 30) },
 ];
 
 export const branding: Branding = {

@@ -2,9 +2,11 @@ import {
   Bell,
   BookOpen,
   Boxes,
+  Bug,
   Building2,
   CheckSquare,
   FolderTree,
+  GitPullRequestArrow,
   History,
   LayoutDashboard,
   Palette,
@@ -36,7 +38,9 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
       { label: 'Chamados', href: '/chamados', icon: Ticket },
-      { label: 'Aprovações', href: '/aprovacoes', icon: CheckSquare, roles: ['ADMIN', 'GESTOR'] },
+      { label: 'Aprovações', href: '/aprovacoes', icon: CheckSquare },
+      { label: 'Problemas', href: '/problemas', icon: Bug, roles: ['TECNICO'] },
+      { label: 'Mudanças', href: '/mudancas', icon: GitPullRequestArrow, roles: ['TECNICO'] },
       { label: 'Ativos (CMDB)', href: '/ativos', icon: Boxes, roles: ['ADMIN', 'TECNICO'] },
       { label: 'Base de Conhecimento', href: '/kb', icon: BookOpen },
       { label: 'Notificações', href: '/notificacoes', icon: Bell },
@@ -80,9 +84,13 @@ export function isActive(pathname: string, href: string) {
 const ROUTE_ROLES: { href: string; roles: Papel[] }[] = [
   ...NAV_SECTIONS.flatMap((s) => s.items).filter((i): i is NavItem & { roles: Papel[] } => !!i.roles),
   { href: '/chamados/triagem', roles: ['TECNICO'] as Papel[] },
+  { href: '/kb/artigos/novo', roles: ['TECNICO'] as Papel[] },
 ].sort((a, b) => b.href.length - a.href.length);
+
+/** Rotas com segmento dinâmico, que não se resolvem por prefixo. */
+const ROUTE_PATTERNS: { pattern: RegExp; roles: Papel[] }[] = [{ pattern: /^\/kb\/artigos\/[^/]+\/editar\/?$/, roles: ['TECNICO'] }];
 
 /** Perfis exigidos pela rota (prefixo mais específico); `undefined` = qualquer usuário autenticado. */
 export function requiredRoles(pathname: string): Papel[] | undefined {
-  return ROUTE_ROLES.find((r) => isActive(pathname, r.href))?.roles;
+  return ROUTE_PATTERNS.find((r) => r.pattern.test(pathname))?.roles ?? ROUTE_ROLES.find((r) => isActive(pathname, r.href))?.roles;
 }

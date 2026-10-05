@@ -1,26 +1,30 @@
 import { api } from '@/lib/api';
-import { byId, lookups } from '@/lib/backend/lookups';
-import type { ApiAprovacao, ApiChamado } from '@/lib/backend/types';
-import { data, request } from '@/lib/http';
+import { byId, lookups, perfilAtualAtinge } from '@/lib/backend/lookups';
+import type { ApiAprovacao, ApiChamado, ApiMudanca } from '@/lib/backend/types';
+import { data, getAll, request, TETO_PAGINA } from '@/lib/http';
 import { chamadosApi } from '@/features/chamados/services/chamado.mapper';
 import * as db from '@/mocks/db';
-import type { Aprovacao, AprovacaoInput, DecisaoInput, Mudanca, Prioridade } from '@/types';
-
-interface ApiMudanca {
-  id: number;
-  titulo: string;
-  tipo_mudanca: string;
-}
+import type { Aprovacao, AprovacaoInput, DecisaoInput, FiltroStatusAprovacao, Prioridade } from '@/types';
 
 const PRIORIDADE_POR_TIPO_MUDANCA: Record<string, Prioridade> = { EMERGENCIAL: 'CRITICA', NORMAL: 'MEDIA', PADRAO: 'BAIXA' };
-const STATUS_DA_API: Record<string, Aprovacao['status']> = { PENDENTE: 'PENDENTE', APROVADO: 'APROVADA', REJEITADO: 'REJEITADA' };
+const STATUS_DA_API: Record<string, Aprovacao['status']> = { PENDENTE: 'PENDENTE', APROVADO: 'APROVADA', REJEITADO: 'REJEITADA', CANCELADO: 'CANCELADA' };
+const FILTRO_MOCK: Record<FiltroStatusAprovacao, Aprovacao['status'] | null> = {
+  PENDENTE: 'PENDENTE',
+  APROVADO: 'APROVADA',
+  REJEITADO: 'REJEITADA',
+  CANCELADO: 'CANCELADA',
+  TODOS: null,
+};
 
-/** GET /aprovacoes já devolve apenas as pendentes do tenant. Chamados e mudanças só enriquecem o título. */
-async function pendentesReal(): Promise<Aprovacao[]> {
+/**
+ * GET /aprovacoes?status=: todas do tenant para técnicos e gestores, só as próprias para o solicitante.
+ * Chamados e mudanças só enriquecem o título.
+ */
+async function listaReal(filtro: FiltroStatusAprovacao): Promise<Aprovacao[]> {
   const [rows, chamados, mudancas, usuarios] = await Promise.all([
-    data(api.get<ApiAprovacao[]>('/aprovacoes')),
+    getAll<ApiAprovacao>('/aprovacoes', TETO_PAGINA.aprovacoes, { status: filtro }),
     chamadosApi().catch(() => [] as ApiChamado[]),
-    data(api.get<ApiMudanca[]>('/mudancas')).catch(() => [] as ApiMudanca[]),
+    perfilAtualAtinge('TECNICO') ? getAll<ApiMudanca>('/mudancas', TETO_PAGINA.mudancas).catch(() => [] as ApiMudanca[]) : ([] as ApiMudanca[]),
     lookups.usuarios(),
   ]);
   const cs = byId(chamados);
@@ -40,26 +44,30 @@ async function pendentesReal(): Promise<Aprovacao[]> {
         chamadoId: a.id_chamado,
         mudancaId: a.id_mudanca,
         solicitanteNome: us.get(a.id_solicitante)?.nome ?? `Usuário #${a.id_solicitante}`,
+        aprovadorNome: us.get(a.id_aprovador)?.nome ?? `Usuário #${a.id_aprovador}`,
         prioridade,
         risco: null,
         custoEstimado: null,
         solicitadoEm: a.data_solicitacao,
         status: STATUS_DA_API[a.status] ?? 'PENDENTE',
+        decididoEm: a.data_decisao ?? null,
+        justificativaAprovador: a.justificativa_aprovador ?? null,
       };
     })
-    .sort((a, b) => a.solicitadoEm.localeCompare(b.solicitadoEm));
+    .sort(ordenar);
 }
 
-export const aprovacoesService = {
-  pendentes: () => request<Aprovacao[]>(pendentesReal, () => db.aprovacoes.filter((a) => a.status === 'PENDENTE')),
+/** Pendentes: mais antigas primeiro (fila); decididas: mais recentes primeiro. */
+const ordenar = (a: Aprovacao, b: Aprovacao) =>
+  a.status === 'PENDENTE' && b.status === 'PENDENTE'
+    ? a.solicitadoEm.localeCompare(b.solicitadoEm)
+    : (b.decididoEm ?? b.solicitadoEm).localeCompare(a.decididoEm ?? a.solicitadoEm);
 
-  mudancas: () =>
-    request<Mudanca[]>(
-      async () => (await data(api.get<ApiMudanca[]>('/mudancas'))).map((m) => ({ id: m.id, titulo: m.titulo })),
-      () => [
-        { id: 881, titulo: 'Janela de manutenção - Cluster SQL' },
-        { id: 882, titulo: 'Migração do firewall de borda' },
-      ],
+export const aprovacoesService = {
+  list: (filtro: FiltroStatusAprovacao) =>
+    request<Aprovacao[]>(
+      () => listaReal(filtro),
+      () => db.aprovacoes.filter((a) => !FILTRO_MOCK[filtro] || a.status === FILTRO_MOCK[filtro]).sort(ordenar),
     ),
 
   criar: (input: AprovacaoInput) =>
@@ -79,19 +87,23 @@ export const aprovacoesService = {
         }
         const chamado = input.chamadoId !== undefined ? db.chamados.find((c) => c.id === input.chamadoId) : undefined;
         if (input.chamadoId !== undefined && !chamado) throw new Error('Chamado não encontrado (HTTP 404).');
+        const mudanca = input.mudancaId !== undefined ? db.mudancas.find((m) => m.id === input.mudancaId) : undefined;
         const a: Aprovacao = {
           id: Math.max(0, ...db.aprovacoes.map((x) => x.id)) + 1,
-          titulo: chamado?.titulo ?? `Mudança #${input.mudancaId}`,
+          titulo: chamado?.titulo ?? mudanca?.titulo ?? `Mudança #${input.mudancaId}`,
           descricao: input.descricao,
           origem: chamado ? 'CHAMADO' : 'MUDANCA',
           chamadoId: input.chamadoId ?? null,
           mudancaId: input.mudancaId ?? null,
           solicitanteNome: db.usuarios[0]!.nome,
+          aprovadorNome: aprovador.nome,
           prioridade: chamado?.prioridade ?? 'MEDIA',
           risco: null,
           custoEstimado: null,
           solicitadoEm: new Date().toISOString(),
           status: 'PENDENTE',
+          decididoEm: null,
+          justificativaAprovador: null,
         };
         db.aprovacoes.push(a);
         return a;
@@ -112,7 +124,9 @@ export const aprovacoesService = {
         if (!a) throw new Error('Aprovação não encontrada (HTTP 404).');
         if (a.status !== 'PENDENTE') throw new Error('Esta aprovação já foi decidida (HTTP 409).');
         if (input.decisao === 'REJEITADA' && !input.justificativa) throw new Error('A justificativa é obrigatória na rejeição (HTTP 400).');
-        a.status = input.decisao;
+        Object.assign(a, { status: input.decisao, decididoEm: new Date().toISOString(), justificativaAprovador: input.justificativa ?? null });
+        const mudanca = db.mudancas.find((m) => m.id === a.mudancaId);
+        if (mudanca) mudanca.status = input.decisao === 'APROVADA' ? 'AGENDADA' : 'CANCELADA';
         return a;
       },
     ),

@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
-import { ArrowRight, BadgeCheck, Eye, Laptop, Network, Search, ShieldCheck, TerminalSquare, TrendingUp, UserRoundCheck, X, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Eye, Laptop, Network, Plus, Search, ShieldCheck, TerminalSquare, TrendingUp, UserRoundCheck, X, type LucideIcon } from 'lucide-react';
 import { Badge, Button, buttonVariants, Card, CardBody, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import { formatNumber, timeAgo } from '@/lib/format';
 import type { KbArtigoResumo, KbCategoria } from '@/types';
+import { useAuth } from '@/features/auth/auth-provider';
 import { useKbArtigos, useKbCategorias } from '../use-kb';
+import { KbGestao } from './kb-gestao';
 
 const ICONES: Record<KbCategoria['icone'], LucideIcon> = {
   rede: Network,
@@ -40,6 +42,7 @@ export function KbHomeView() {
   const [search, setSearch] = useState('');
   const [categoriaId, setCategoriaId] = useState<number | undefined>();
   const filtrando = !!search || !!categoriaId;
+  const podeEscrever = useAuth().hasRole('TECNICO');
 
   const categorias = useKbCategorias();
   const populares = useKbArtigos({ ordem: 'populares', limit: 3 });
@@ -60,7 +63,12 @@ export function KbHomeView() {
 
   return (
     <>
-      <section className="-mx-4 -mt-4 mb-8 bg-brand-darker px-4 py-14 text-center md:-mx-6 md:-mt-6 lg:-mx-8 lg:-mt-8">
+      <section className="relative -mx-4 -mt-4 mb-8 bg-brand-darker px-4 py-14 text-center md:-mx-6 md:-mt-6 lg:-mx-8 lg:-mt-8">
+        {podeEscrever && (
+          <Link href="/kb/artigos/novo" className={buttonVariants({ size: 'sm', className: 'absolute right-4 top-4 gap-1.5 md:right-6 lg:right-8' })}>
+            <Plus className="h-4 w-4" aria-hidden /> Novo Artigo
+          </Link>
+        )}
         <h1 className="text-3xl font-bold text-white">Como podemos ajudar você hoje?</h1>
         <p className="mx-auto mt-2 max-w-xl text-sm text-slate-400">
           Busque em nossa base de conhecimento por guias passo a passo, soluções de problemas conhecidos e políticas da empresa.
@@ -155,6 +163,8 @@ export function KbHomeView() {
           </section>
         </div>
       )}
+
+      {podeEscrever && <KbGestao />}
 
       <Card className="mt-10 bg-slate-100">
         <CardBody className="flex flex-wrap items-center justify-between gap-4 p-8">

@@ -4,7 +4,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { formatMinutes } from '@/lib/format';
 import type { Chamado, MotivoPausa, Prioridade, StatusChamado } from '@/types';
-import { STATUS_LABEL } from '../utils/transicoes';
+import { MOTIVO_PAUSA_LABEL, STATUS_LABEL } from '../utils/transicoes';
 
 export const STATUS_META: Record<StatusChamado, { label: string; tone: BadgeTone; color: string }> = {
   NOVO: { label: STATUS_LABEL.NOVO, tone: 'novo', color: '#3B82F6' },
@@ -25,12 +25,7 @@ export const STATUS_OPTIONS = (Object.keys(STATUS_META) as StatusChamado[]).map(
 
 export { isFinalizado, TRANSICOES, transicoesComuns } from '../utils/transicoes';
 
-export const MOTIVOS_PAUSA: { value: MotivoPausa; label: string }[] = [
-  { value: 'AGUARDANDO_SOLICITANTE', label: 'Aguardando solicitante' },
-  { value: 'AGUARDANDO_TERCEIRO', label: 'Aguardando terceiro' },
-  { value: 'FORNECEDOR_EXTERNO', label: 'Fornecedor externo' },
-  { value: 'MANUTENCAO_PROGRAMADA', label: 'Manutenção programada' },
-];
+export const MOTIVOS_PAUSA = (Object.keys(MOTIVO_PAUSA_LABEL) as MotivoPausa[]).map((value) => ({ value, label: MOTIVO_PAUSA_LABEL[value] }));
 export const PRIORIDADE_OPTIONS = (Object.keys(PRIORIDADE_META) as Prioridade[]).map((p) => ({ value: p, label: PRIORIDADE_META[p].label }));
 
 export function StatusBadge({ status, className }: { status: StatusChamado; className?: string }) {

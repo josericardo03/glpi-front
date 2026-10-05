@@ -59,6 +59,14 @@ export interface ChamadoInput {
   solicitanteId: ID;
   grupoId: ID | null;
   tecnicoId: ID | null;
+  ativoAfetadoId: ID | null;
+}
+
+/** `POST /pesquisas-csat`: só para quem abriu o chamado, uma vez, com o chamado resolvido ou concluído. */
+export interface CsatInput {
+  chamadoId: ID;
+  nota: number;
+  comentario?: string;
 }
 
 export type MotivoPausa = 'AGUARDANDO_SOLICITANTE' | 'AGUARDANDO_TERCEIRO' | 'FORNECEDOR_EXTERNO' | 'MANUTENCAO_PROGRAMADA';
@@ -122,12 +130,24 @@ export interface HistoricoEvento {
   criadoEm: string;
 }
 
+/** Problema ou mudança vinculado ao chamado. */
+export interface VinculoItil {
+  id: ID;
+  titulo: string;
+  status: string;
+}
+
+export type CsatChamado = { avaliado: false } | { avaliado: true; nota: number; comentario: string | null; respondidoEm: string };
+
 export interface ChamadoDetalhe extends Chamado {
   comentarios: Comentario[];
   worklogs: Worklog[];
   pausas: PausaSla[];
   anexos: Anexo[];
   historico: HistoricoEvento[];
+  problemas: VinculoItil[];
+  mudancas: VinculoItil[];
+  csat: CsatChamado;
 }
 
 export interface Tecnico {

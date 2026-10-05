@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
 import { byId, lookups } from '@/lib/backend/lookups';
 import type { ApiAtivo, ApiUsuario } from '@/lib/backend/types';
-import { data, matches, request } from '@/lib/http';
+import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type { Ativo, AtivoDetalhe, AtivoFiltros, AtivoInput, AtivosResumo, Especificacao, Manutencao, StatusAtivo, TipoAtivo } from '@/types';
@@ -55,7 +55,7 @@ function toAtivo(a: ApiAtivo, usuarios: Map<number, ApiUsuario>): Ativo {
 }
 
 async function fetchAtivos() {
-  const [rows, usuarios] = await Promise.all([data(api.get<ApiAtivo[]>('/ativos')), lookups.usuarios()]);
+  const [rows, usuarios] = await Promise.all([getAll<ApiAtivo>('/ativos', TETO_PAGINA.ativos), lookups.usuarios()]);
   const users = byId(usuarios);
   return rows.map((r) => toAtivo(r, users));
 }

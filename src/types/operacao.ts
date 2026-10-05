@@ -10,24 +10,27 @@ export interface Aprovacao {
   chamadoId: ID | null;
   mudancaId: ID | null;
   solicitanteNome: string;
+  aprovadorNome: string | null;
   prioridade: Prioridade;
   /** `null` quando a API não informa o risco. */
   risco: 'BAIXO' | 'MEDIO' | 'ALTO' | null;
   custoEstimado: number | null;
   solicitadoEm: string;
-  status: 'PENDENTE' | 'APROVADA' | 'REJEITADA';
+  status: StatusAprovacao;
+  decididoEm: string | null;
+  justificativaAprovador: string | null;
 }
+
+export type StatusAprovacao = 'PENDENTE' | 'APROVADA' | 'REJEITADA' | 'CANCELADA';
+
+/** Valores aceitos em `GET /aprovacoes?status=` (padrão PENDENTE). */
+export type FiltroStatusAprovacao = 'PENDENTE' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'TODOS';
 
 /** `POST /aprovacoes`: exatamente um entre chamado e mudança; o aprovador deve ser GESTOR ou ADMIN. */
 export type AprovacaoInput = { descricao: string; aprovadorId: ID } & (
   | { chamadoId: ID; mudancaId?: never }
   | { mudancaId: ID; chamadoId?: never }
 );
-
-export interface Mudanca {
-  id: ID;
-  titulo: string;
-}
 
 export interface DecisaoInput {
   decisao: 'APROVADA' | 'REJEITADA';
@@ -66,6 +69,8 @@ export interface KbArtigo {
   conteudoMarkdown: string;
   categoriaId: ID;
   categoriaNome: string;
+  status: StatusArtigoKb;
+  autorId: ID;
   autorNome: string;
   autorCargo: string;
   visualizacoes: number;
@@ -78,3 +83,18 @@ export interface KbArtigo {
 }
 
 export type KbArtigoResumo = Omit<KbArtigo, 'conteudoMarkdown'>;
+
+/** A base pública só lista PUBLICADO; técnicos consultam os demais com `?status=` ou `?meus=true`. */
+export type StatusArtigoKb = 'RASCUNHO' | 'REVISAO' | 'PUBLICADO' | 'ARQUIVADO';
+
+export interface KbArtigoInput {
+  categoriaId: ID;
+  titulo: string;
+  conteudo: string;
+  status: StatusArtigoKb;
+}
+
+export interface KbCategoriaInput {
+  nome: string;
+  descricao?: string;
+}

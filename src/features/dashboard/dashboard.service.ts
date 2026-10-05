@@ -1,5 +1,5 @@
 import { api } from '@/lib/api';
-import { byId, currentUserId, lookups } from '@/lib/backend/lookups';
+import { byId, currentUserId, lookups, perfilAtualAtinge } from '@/lib/backend/lookups';
 import type { ApiChamado, ApiIntegracao } from '@/lib/backend/types';
 import { PERFIL_RANK } from '@/lib/backend/usuario.mapper';
 import { data, request } from '@/lib/http';
@@ -32,7 +32,7 @@ async function resumoReal(periodo: Periodo): Promise<DashboardResumo> {
   const [rows, ctx, integracoes] = await Promise.all([
     chamadosApi(),
     loadCtx(),
-    data(api.get<ApiIntegracao[]>('/integracoes')).catch(() => [] as ApiIntegracao[]),
+    perfilAtualAtinge('ADMIN') ? data(api.get<ApiIntegracao[]>('/integracoes')).catch(() => [] as ApiIntegracao[]) : ([] as ApiIntegracao[]),
   ]);
   const chamados = rows.map((r) => toChamado(r, ctx));
   const eu = currentUserId();

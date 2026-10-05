@@ -9,20 +9,25 @@ export const PAPEL_LABEL: Record<Papel, string> = { ADMIN: 'Administrador', GEST
 export const perfilPrincipal = (papeis: Papel[]): Papel =>
   papeis.reduce<Papel>((a, b) => (PERFIL_RANK[b] > PERFIL_RANK[a] ? b : a), 'SOLICITANTE');
 
-export function toUsuario(u: ApiUsuario, departamentos?: Map<number, ApiDepartamento>): Usuario {
+/**
+ * Para o SOLICITANTE, GET /usuarios devolve só `id`, `nome` e `perfil` dos gestores/administradores
+ * (aprovadores); os demais campos ficam com valores neutros, e a ausência de status significa ativo.
+ */
+export function toUsuario(u: ApiUsuario | Pick<ApiUsuario, 'id' | 'nome' | 'perfil'>, departamentos?: Map<number, ApiDepartamento>): Usuario {
+  const c: Partial<ApiUsuario> = u;
   return {
     id: u.id,
-    tenantId: u.id_cliente,
+    tenantId: c.id_cliente ?? 0,
     nome: u.nome,
-    email: u.email,
-    cargo: u.cargo,
-    departamentoId: u.id_departamento,
-    departamentoNome: u.id_departamento ? departamentos?.get(u.id_departamento)?.nome : undefined,
+    email: c.email ?? '',
+    cargo: c.cargo ?? '',
+    departamentoId: c.id_departamento ?? null,
+    departamentoNome: c.id_departamento ? departamentos?.get(c.id_departamento)?.nome : undefined,
     papeis: [u.perfil],
-    status: u.status as StatusUsuario,
-    avatarUrl: u.avatar_url,
-    ultimoAcesso: u.ultimo_login,
-    criadoEm: u.data_cadastro,
+    status: (c.status ?? 'ATIVO') as StatusUsuario,
+    avatarUrl: c.avatar_url ?? null,
+    ultimoAcesso: c.ultimo_login ?? null,
+    criadoEm: c.data_cadastro ?? null,
   };
 }
 
