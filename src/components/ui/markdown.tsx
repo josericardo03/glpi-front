@@ -4,14 +4,18 @@ import { cn } from '@/lib/utils';
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function inline(text: string) {
-  return escapeHtml(text)
+  const protegido = escapeHtml(text).replace(/\\([\\*`+[\]])/g, (_, c: string) => `\u0000${c}`);
+  return protegido
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/(?![/\\]))[^)\s]+)\)/g, (_, label: string, href: string) => {
       const externo = href.startsWith('http');
       return `<a href="${href}" class="text-brand-primary underline"${externo ? ' target="_blank" rel="noopener noreferrer nofollow"' : ''}>${label}</a>`;
-    });
+    })
+    .replace(/\+\+([^+]+)\+\+/g, '<u>$1</u>')
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\u0000(.)/g, '$1');
 }
 
 /**
@@ -33,6 +37,11 @@ function toHtml(md: string) {
       return `<p>${inline(b).replace(/\n/g, '<br/>')}</p>`;
     })
     .join('');
+}
+
+/** HTML do mesmo Markdown exibido na leitura; o editor visual usa isso ao abrir um artigo já salvo. */
+export function markdownParaHtml(md: string) {
+  return md.trim() ? toHtml(md) : '';
 }
 
 export const Markdown = memo(function Markdown({ content, className }: { content: string; className?: string }) {

@@ -64,3 +64,26 @@
 .prose-kb strong {
   @apply font-semibold text-brand-darker;
 }
+.prose-kb u {
+  text-underline-offset: 2px;
+}
+
+/* Área de escrita do artigo. O elemento é criado fora do React para o texto não ser apagado. */
+.editor-folha {
+  min-height: 22rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+  outline: none;
+  cursor: text;
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: #0f172a;
+}
+.editor-folha > :first-child {
+  margin-top: 0;
+}
+.editor-folha[data-vazio='true']::before {
+  content: attr(data-placeholder);
+  display: block;
+  color: #94a3b8;
+  pointer-events: none;
+}

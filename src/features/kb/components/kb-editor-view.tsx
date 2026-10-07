@@ -2,28 +2,18 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { Eye, FolderPlus, PenLine, Save } from 'lucide-react';
-import { Button, Callout, Card, CardBody, CardHeader, ErrorState, Field, Input, Markdown, PageHeader, PageLoader, Select, Tabs, Textarea } from '@/components/ui';
+import { FolderPlus, Save } from 'lucide-react';
+import { Button, Callout, Card, CardBody, CardHeader, ErrorState, Field, Input, PageHeader, PageLoader, Select } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import type { KbArtigo, StatusArtigoKb } from '@/types';
+import { contarPalavras } from '../documento';
 import { useAtualizarArtigoKb, useCriarArtigoKb, useKbArtigo, useKbCategorias } from '../use-kb';
 import { KbCategoriaModal } from './kb-categoria-modal';
+import { RichEditor } from './rich-editor';
 import { STATUS_ARTIGO } from './kb-status';
 
 const STATUS_NOVO: StatusArtigoKb[] = ['PUBLICADO', 'REVISAO', 'RASCUNHO'];
 const STATUS_EDICAO: StatusArtigoKb[] = [...STATUS_NOVO, 'ARQUIVADO'];
-
-const MODELO = `## Problema
-
-Descreva o sintoma que o usuário observa.
-
-## Solução
-
-1. Primeiro passo
-2. Segundo passo
-
-> Dica: use **negrito** para destacar botões e menus.
-`;
 
 type Erros = Partial<Record<'titulo' | 'conteudo' | 'categoria', string>>;
 
@@ -40,10 +30,9 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
   const router = useRouter();
   const { data: categorias, isLoading: carregandoCategorias } = useKbCategorias();
   const [titulo, setTitulo] = useState(artigo?.titulo ?? '');
-  const [conteudo, setConteudo] = useState(artigo?.conteudoMarkdown ?? MODELO);
+  const [conteudo, setConteudo] = useState(artigo?.conteudoMarkdown ?? '');
   const [categoriaId, setCategoriaId] = useState(artigo ? String(artigo.categoriaId) : '');
   const [status, setStatus] = useState<StatusArtigoKb>(artigo?.status ?? 'PUBLICADO');
-  const [aba, setAba] = useState<'escrever' | 'visualizar'>('escrever');
   const [novaCategoria, setNovaCategoria] = useState(false);
   const [erros, setErros] = useState<Erros>({});
 
@@ -66,14 +55,13 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
     ev.preventDefault();
     const e = validar();
     setErros(e);
-    if (e.conteudo) setAba('escrever');
     if (Object.keys(e).length) return;
     const input = { categoriaId: Number(categoriaId), titulo, conteudo, status };
     if (artigo) atualizar.mutate(input);
     else criar.mutate(input);
   }
 
-  const palavras = conteudo.trim() ? conteudo.trim().split(/\s+/).length : 0;
+  const palavras = contarPalavras(conteudo);
   const opcoesStatus = (artigo ? STATUS_EDICAO : STATUS_NOVO).map((s) => ({ value: s, label: STATUS_ARTIGO[s].label }));
   const voltar = artigo ? `/kb/artigos/${artigo.id}` : '/kb';
   const rotuloSalvar = status === 'PUBLICADO' && artigo?.status !== 'PUBLICADO' ? 'Publicar artigo' : artigo ? 'Salvar alterações' : 'Salvar artigo';
@@ -82,7 +70,7 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
     <form onSubmit={salvar} noValidate>
       <PageHeader
         title={artigo ? 'Editar Artigo' : 'Novo Artigo'}
-        description="Documente soluções para que usuários e técnicos resolvam sozinhos."
+        description="Escreva como em um documento. A formatação fica nos botões, sem comandos."
         breadcrumbs={[
           { label: 'Base de Conhecimento', href: '/kb' },
           ...(artigo ? [{ label: artigo.titulo, href: voltar }, { label: 'Editar' }] : [{ label: 'Novo artigo' }]),
@@ -96,26 +84,9 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
               {(fid) => <Input id={fid} value={titulo} maxLength={255} onChange={(e) => setTitulo(e.target.value)} invalid={!!erros.titulo} placeholder="Ex.: Como configurar a impressora do 3º andar" />}
             </Field>
             <div>
-              <Tabs
-                value={aba}
-                onChange={setAba}
-                aria-label="Modo do editor"
-                className="-mx-5 mb-3"
-                items={[
-                  { value: 'escrever', label: 'Escrever', icon: <PenLine className="h-4 w-4" /> },
-                  { value: 'visualizar', label: 'Visualizar', icon: <Eye className="h-4 w-4" /> },
-                ]}
-              />
-              {aba === 'escrever' ? (
-                <Field label="Conteúdo" required error={erros.conteudo} hint="Aceita Markdown: ## títulos, **negrito**, listas, > citações, `código` e [links](https://...).">
-                  {(fid) => <Textarea id={fid} value={conteudo} onChange={(e) => setConteudo(e.target.value)} invalid={!!erros.conteudo} className="min-h-[420px] font-mono text-[13px] leading-relaxed" />}
-                </Field>
-              ) : (
-                <div className="min-h-[420px] rounded-md border border-brand-border bg-white p-5">
-                  {titulo.trim() && <h1 className="mb-4 text-2xl font-bold text-brand-darker">{titulo}</h1>}
-                  {conteudo.trim() ? <Markdown content={conteudo} /> : <p className="text-sm italic text-brand-muted">Nada para visualizar ainda.</p>}
-                </div>
-              )}
+              <Field label="Conteúdo" required error={erros.conteudo}>
+                {(fid) => <RichEditor id={fid} inicial={artigo?.conteudoMarkdown ?? ''} onChange={setConteudo} invalid={!!erros.conteudo} />}
+              </Field>
               <p className="mt-2 text-right text-xs text-brand-muted">
                 {palavras} {palavras === 1 ? 'palavra' : 'palavras'} · cerca de {Math.max(1, Math.round(palavras / 200))} min de leitura
               </p>
