@@ -10,6 +10,7 @@ const securityHeaders = [
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_MOCKS === 'true';
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   reactCompiler: true,
   poweredByHeader: false,
