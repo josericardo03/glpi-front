@@ -7,6 +7,7 @@ function inline(text: string) {
   const protegido = escapeHtml(text).replace(/\\([\\*`+[\]])/g, (_, c: string) => `\u0000${c}`);
   return protegido
     .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/!\[([^\]]*)\]\((\/api\/(?:artigos-kb|kb\/artigos)\/\d+\/imagens\/\d+)\)/g, (_, alt: string, href: string) => `<img alt="${alt}" data-api="${href}" />`)
     .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/(?![/\\]))[^)\s]+)\)/g, (_, label: string, href: string) => {
       const externo = href.startsWith('http');
       return `<a href="${href}" class="text-brand-primary underline"${externo ? ' target="_blank" rel="noopener noreferrer nofollow"' : ''}>${label}</a>`;

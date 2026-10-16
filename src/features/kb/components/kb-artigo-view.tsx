@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { CalendarDays, Clock, Eye, Pencil, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { Avatar, Badge, Button, buttonVariants, Callout, Card, CardBody, CardHeader, EmptyState, ErrorState, Markdown, PageLoader } from '@/components/ui';
+import { Avatar, Badge, Button, buttonVariants, Callout, Card, CardBody, CardHeader, EmptyState, ErrorState, PageLoader } from '@/components/ui';
 import { getErrorMessage, httpStatus } from '@/lib/api';
 import { formatDate, formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useKbArtigo, useKbArtigos, useKbFeedback, useRegistrarVisualizacao } from '../use-kb';
+import { ConteudoArtigo } from './conteudo-artigo';
 import { STATUS_ARTIGO } from './kb-status';
 
 export function KbArtigoView({ id }: { id: number }) {
@@ -88,7 +89,7 @@ export function KbArtigoView({ id }: { id: number }) {
               </span>
             </div>
             <h1 className="mt-4 text-3xl font-bold leading-tight text-brand-darker md:text-4xl">{a.titulo}</h1>
-            <Markdown content={a.conteudoMarkdown} className="mt-6 border-t border-brand-border pt-2" />
+            <ConteudoArtigo markdown={a.conteudoMarkdown} className="mt-6 border-t border-brand-border pt-2" />
 
             {publicado && (
               <div className="mt-10 border-t border-brand-border pt-6 text-center">

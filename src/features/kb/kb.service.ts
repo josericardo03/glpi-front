@@ -1,11 +1,12 @@
 import { isAxiosError } from 'axios';
-import { api } from '@/lib/api';
+import { api, getErrorMessage, httpStatus } from '@/lib/api';
 import { byId, currentUserId, lookups } from '@/lib/backend/lookups';
 import type { ApiArtigoKb, ApiCategoriaKb, ApiUsuario } from '@/lib/backend/types';
 import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
 import { queryClient } from '@/lib/query-client';
 import * as db from '@/mocks/db';
 import type { KbArtigo, KbArtigoInput, KbArtigoResumo, KbCategoria, KbCategoriaInput, StatusArtigoKb } from '@/types';
+import { imagemAceita, IMAGEM_MAX_BYTES } from './imagem';
 
 export interface ArtigosFiltros {
   search?: string;
@@ -242,4 +243,79 @@ export const kbService = {
         return true;
       },
     ),
+
+  /**
+   * Envia a imagem do artigo. O texto guarda só o caminho; o arquivo não entra em `conteudo`.
+   * PNG, JPEG, GIF e WebP, até 20 MB.
+   */
+  enviarImagem: (artigoId: number, file: File) => {
+    if (file.size > IMAGEM_MAX_BYTES) return Promise.reject(new Error('A imagem passa de 20 MB.'));
+    if (!imagemAceita(file)) return Promise.reject(new Error('Envie uma imagem PNG, JPEG, GIF ou WebP.'));
+    const form = new FormData();
+    form.append('arquivo', file, file.name);
+    return request<ImagemArtigo>(
+      async () => {
+        try {
+          const row = await data(api.post<ImagemArtigo>(`/artigos-kb/${artigoId}/imagens`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 }));
+          return { ...row, tamanho_bytes: Number(row.tamanho_bytes) };
+        } catch (err) {
+          throw new Error(mensagemImagem(err));
+        }
+      },
+      () => {
+        const id = Math.max(0, ...[...imagensMock.keys()].map((k) => Number(k.split(':')[1]))) + 1;
+        const imagem: ImagemArtigo = {
+          id,
+          id_cliente: 1,
+          id_artigo: artigoId,
+          nome_arquivo: file.name,
+          caminho_storage: `mock://${artigoId}/${id}-${file.name}`,
+          tipo_mime: file.type || 'image/png',
+          tamanho_bytes: file.size,
+          data_upload: new Date().toISOString(),
+        };
+        imagensMock.set(`${artigoId}:${id}`, { imagem, blob: file });
+        return imagem;
+      },
+    );
+  },
+
+  /** Baixa a imagem com o token. A resposta vira um endereço local para a tag img. */
+  baixarImagem: (artigoId: number, imagemId: number) =>
+    request<Blob>(
+      async () => {
+        try {
+          const r = await api.get<Blob>(`/artigos-kb/${artigoId}/imagens/${imagemId}`, { responseType: 'blob', timeout: 120_000 });
+          return r.data;
+        } catch (err) {
+          throw new Error(mensagemImagem(err));
+        }
+      },
+      () => {
+        const item = imagensMock.get(`${artigoId}:${imagemId}`);
+        if (!item) throw new Error('Artigo ou imagem não encontrado.');
+        return item.blob;
+      },
+    ),
 };
+
+export interface ImagemArtigo {
+  id: number;
+  id_cliente: number;
+  id_artigo: number;
+  nome_arquivo: string;
+  caminho_storage: string;
+  tipo_mime: string;
+  tamanho_bytes: number;
+  data_upload: string;
+}
+
+const imagensMock = new Map<string, { imagem: ImagemArtigo; blob: Blob }>();
+
+function mensagemImagem(err: unknown) {
+  const status = httpStatus(err);
+  if (status === 400) return 'Envie uma imagem PNG, JPEG, GIF ou WebP.';
+  if (status === 413) return 'A imagem passa de 20 MB.';
+  if (status === 404) return 'Artigo ou imagem não encontrado.';
+  return getErrorMessage(err);
+}

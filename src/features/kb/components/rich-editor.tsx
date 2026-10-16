@@ -1,29 +1,50 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Code, Link2, List, ListOrdered, MessageSquareWarning, Redo2, Undo2 } from 'lucide-react';
-import { Button, Input } from '@/components/ui';
+import { Code, ImagePlus, Link2, List, ListOrdered, MessageSquareWarning, Redo2, Undo2 } from 'lucide-react';
+import { Button, Input, useToast } from '@/components/ui';
 import { markdownParaHtml } from '@/components/ui/markdown';
 import { cn } from '@/lib/utils';
 import { htmlParaMarkdown, urlDeLink } from '../documento';
+import { altDeArquivo, imagemAceita, IMAGEM_MAX_BYTES } from '../imagem';
+import { carregarImagens, ImagemAmpliada } from './conteudo-artigo';
 
 interface Props {
   id?: string;
   inicial: string;
   invalid?: boolean;
   onChange: (markdown: string) => void;
+  /** Confere título e categoria antes de abrir o arquivo. */
+  antesDaImagem?: () => boolean;
+  /** Envia o arquivo. No artigo novo, cria o artigo e devolve o endereço da imagem. */
+  enviarImagem: (file: File) => Promise<{ href: string; alt: string }>;
+  /** Grava o texto já com a imagem, para ela não depender de um segundo salvamento. */
+  aoInserirImagem?: (markdown: string) => Promise<void>;
 }
 
 type Formato = 'bold' | 'italic' | 'underline' | 'ul' | 'ol' | 'h2' | 'h3' | 'quote';
 
 const VAZIO: Record<Formato, boolean> = { bold: false, italic: false, underline: false, ul: false, ol: false, h2: false, h3: false, quote: false };
 
-export function RichEditor({ id, inicial, invalid, onChange }: Props) {
+export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, enviarImagem, aoInserirImagem }: Props) {
+  const toast = useToast();
   const folha = useRef<HTMLDivElement | null>(null);
   const host = useRef<HTMLDivElement>(null);
+  const arquivo = useRef<HTMLInputElement>(null);
   const faixa = useRef<Range | null>(null);
+  const blobs = useRef<string[]>([]);
   const onChangeRef = useRef(onChange);
+  const enviarRef = useRef(enviarImagem);
+  const antesRef = useRef(antesDaImagem);
+  const aoInserirRef = useRef(aoInserirImagem);
   onChangeRef.current = onChange;
+  enviarRef.current = enviarImagem;
+  antesRef.current = antesDaImagem;
+  aoInserirRef.current = aoInserirImagem;
+  const [enviando, setEnviando] = useState(false);
+  const [ampliada, setAmpliada] = useState<{ src: string; alt: string } | null>(null);
+  const ampliarRef = useRef(setAmpliada);
+  ampliarRef.current = setAmpliada;
   const htmlInicial = useRef(markdownParaHtml(inicial));
   const [ativo, setAtivo] = useState(VAZIO);
   const [linkAberto, setLinkAberto] = useState(false);
@@ -32,7 +53,7 @@ export function RichEditor({ id, inicial, invalid, onChange }: Props) {
 
   const marcarVazio = (el: HTMLElement) => {
     const texto = (el.textContent ?? '').replace(/\u00a0/g, '').trim();
-    el.dataset.vazio = texto ? 'false' : 'true';
+    el.dataset.vazio = texto || el.querySelector('img') ? 'false' : 'true';
   };
 
   /**
@@ -66,6 +87,15 @@ export function RichEditor({ id, inicial, invalid, onChange }: Props) {
         onChangeRef.current(htmlParaMarkdown(el!));
       });
     }
+    if (!el.dataset.cliqueImagem) {
+      el.dataset.cliqueImagem = '1';
+      el.addEventListener('mousedown', (e) => {
+        const alvo = e.target;
+        if (!(alvo instanceof HTMLImageElement) || !alvo.dataset.api || !alvo.src) return;
+        e.preventDefault();
+        ampliarRef.current({ src: alvo.src, alt: alvo.alt });
+      });
+    }
     folha.current = el;
     el.ariaInvalid = invalid ? 'true' : 'false';
     if (el.parentNode !== pai) pai.appendChild(el);
@@ -80,6 +110,19 @@ export function RichEditor({ id, inicial, invalid, onChange }: Props) {
     marcarVazio(el);
     onChangeRef.current(htmlParaMarkdown(el));
   }
+
+  useEffect(() => {
+    const el = folha.current;
+    if (!el) return;
+    let ativo = true;
+    const urls: string[] = [];
+    void carregarImagens(el, () => ativo, urls);
+    return () => {
+      ativo = false;
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      blobs.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   useEffect(() => {
     const atualizar = () => {
@@ -147,6 +190,56 @@ export function RichEditor({ id, inicial, invalid, onChange }: Props) {
     publicar();
   }
 
+  function escolherImagem() {
+    if (enviando) return;
+    if (antesRef.current && !antesRef.current()) return;
+    const sel = window.getSelection();
+    faixa.current = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    arquivo.current?.click();
+  }
+
+  async function aoEscolherImagem(file: File | undefined) {
+    const el = folha.current;
+    if (!file || !el) return;
+    if (file.size > IMAGEM_MAX_BYTES) {
+      toast.error('A imagem passa de 20 MB.');
+      return;
+    }
+    if (!imagemAceita(file)) {
+      toast.error('Envie uma imagem PNG, JPEG, GIF ou WebP.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      const figura = await enviarRef.current(file);
+      const img = document.createElement('img');
+      img.alt = figura.alt || altDeArquivo(file.name);
+      img.dataset.api = figura.href;
+      const local = URL.createObjectURL(file);
+      blobs.current.push(local);
+      img.src = local;
+      img.dataset.carregada = '1';
+      img.draggable = false;
+      el.focus();
+      const range = faixa.current;
+      if (range && el.contains(range.startContainer)) {
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        range.collapse(false);
+        range.insertNode(img);
+      } else el.appendChild(img);
+      publicar();
+      await aoInserirRef.current?.(htmlParaMarkdown(el));
+      toast.success('Imagem inserida.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Não foi possível enviar a imagem.');
+    } finally {
+      setEnviando(false);
+      if (arquivo.current) arquivo.current.value = '';
+    }
+  }
+
   function aplicarCodigo() {
     const el = folha.current;
     const sel = window.getSelection();
@@ -205,7 +298,19 @@ export function RichEditor({ id, inicial, invalid, onChange }: Props) {
           <Ferramenta rotulo="Link" ativo={linkAberto} onClick={abrirLink}>
             <Link2 className="h-4 w-4" />
           </Ferramenta>
+          <Ferramenta rotulo={enviando ? 'Enviando imagem' : 'Imagem'} onClick={escolherImagem}>
+            <ImagePlus className="h-4 w-4" />
+          </Ferramenta>
         </Grupo>
+        <input
+          ref={arquivo}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(e) => void aoEscolherImagem(e.target.files?.[0])}
+        />
         <Divisor />
         <Grupo>
           <Ferramenta rotulo="Desfazer" onClick={() => comando('undo')}>
@@ -245,6 +350,7 @@ export function RichEditor({ id, inicial, invalid, onChange }: Props) {
       )}
 
       <div ref={host} className="min-h-[22rem]" />
+      {ampliada && <ImagemAmpliada src={ampliada.src} alt={ampliada.alt} onClose={() => setAmpliada(null)} />}
     </div>
   );
 }

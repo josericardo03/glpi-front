@@ -1,5 +1,14 @@
 /** Converte o HTML do editor visual para o Markdown que a API guarda e a leitura exibe. */
 
+import { refImagem } from './imagem';
+
+function markdownDaImagem(node: HTMLElement) {
+  const href = node.dataset.api ?? '';
+  if (!refImagem(href)) return '';
+  const alt = (node.getAttribute('alt') ?? 'imagem').replace(/[[\]\n\r]/g, '').trim() || 'imagem';
+  return `![${alt}](${href})`;
+}
+
 function texto(s: string) {
   return s.replace(/\u00a0/g, ' ').replace(/[\\*`+[\]]/g, (c) => `\\${c}`);
 }
@@ -33,6 +42,8 @@ function inline(node: Node): string {
       const rotulo = miolo().trim();
       return rotulo && /^(https?:\/\/|\/(?![/\\]))/.test(href) ? `[${rotulo}](${href})` : rotulo;
     }
+    case 'IMG':
+      return markdownDaImagem(node);
     default:
       return miolo();
   }
@@ -59,6 +70,7 @@ function bloco(el: HTMLElement): string {
     const t = inline(el).replace(/\s+/g, ' ').trim();
     return t ? `### ${t}` : '';
   }
+  if (tag === 'IMG') return markdownDaImagem(el);
   return inline(el).replace(/[ \t]+\n/g, '\n').trim();
 }
 
@@ -81,6 +93,7 @@ export function htmlParaMarkdown(root: HTMLElement): string {
 export function contarPalavras(markdown: string) {
   const textoLimpo = markdown
     .replace(/\\([\\*`+[\]])/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/[#>*+`[\]]/g, ' ');
   return textoLimpo.trim() ? textoLimpo.trim().split(/\s+/).length : 0;
