@@ -45,6 +45,7 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
   const [ampliada, setAmpliada] = useState<{ src: string; alt: string } | null>(null);
   const ampliarRef = useRef(setAmpliada);
   ampliarRef.current = setAmpliada;
+  const receberImagemRef = useRef<(file: File, range: Range | null) => void>(() => {});
   const htmlInicial = useRef(markdownParaHtml(inicial));
   const [ativo, setAtivo] = useState(VAZIO);
   const [linkAberto, setLinkAberto] = useState(false);
@@ -72,7 +73,7 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
       if (id) el.id = id;
       el.role = 'textbox';
       el.ariaMultiLine = 'true';
-      el.dataset.placeholder = 'Escreva o artigo aqui';
+      el.dataset.placeholder = 'Escreva o artigo aqui. Cole ou solte uma imagem.';
       el.className = 'editor-folha prose-kb';
       el.innerHTML = htmlInicial.current;
       marcarVazio(el);
@@ -81,10 +82,35 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
         onChangeRef.current(htmlParaMarkdown(el!));
       });
       el.addEventListener('paste', (e) => {
+        const imagem = arquivoDeTransferencia(e.clipboardData);
+        if (imagem) {
+          e.preventDefault();
+          const sel = window.getSelection();
+          const range = sel && sel.rangeCount && el!.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+          receberImagemRef.current(imagem, range);
+          return;
+        }
         e.preventDefault();
         document.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? '');
         marcarVazio(el!);
         onChangeRef.current(htmlParaMarkdown(el!));
+      });
+      el.addEventListener('dragover', (e) => {
+        if (![...(e.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) return;
+        e.preventDefault();
+        el!.dataset.soltar = 'true';
+      });
+      el.addEventListener('dragleave', (e) => {
+        if (e.relatedTarget instanceof Node && el!.contains(e.relatedTarget)) return;
+        delete el!.dataset.soltar;
+      });
+      el.addEventListener('drop', (e) => {
+        delete el!.dataset.soltar;
+        const imagem = arquivoDeTransferencia(e.dataTransfer);
+        if (!imagem) return;
+        e.preventDefault();
+        const range = faixaNoPonto(e.clientX, e.clientY);
+        receberImagemRef.current(imagem, range && el!.contains(range.startContainer) ? range : null);
       });
     }
     if (!el.dataset.cliqueImagem) {
@@ -240,6 +266,13 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
     }
   }
 
+  receberImagemRef.current = (file, range) => {
+    if (enviando) return;
+    if (antesRef.current && !antesRef.current()) return;
+    faixa.current = range;
+    void aoEscolherImagem(file);
+  };
+
   function aplicarCodigo() {
     const el = folha.current;
     const sel = window.getSelection();
@@ -298,7 +331,7 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
           <Ferramenta rotulo="Link" ativo={linkAberto} onClick={abrirLink}>
             <Link2 className="h-4 w-4" />
           </Ferramenta>
-          <Ferramenta rotulo={enviando ? 'Enviando imagem' : 'Imagem'} onClick={escolherImagem}>
+          <Ferramenta rotulo={enviando ? 'Enviando imagem' : 'Imagem. Também dá para colar ou soltar o arquivo'} onClick={escolherImagem}>
             <ImagePlus className="h-4 w-4" />
           </Ferramenta>
         </Grupo>
@@ -353,6 +386,29 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
       {ampliada && <ImagemAmpliada src={ampliada.src} alt={ampliada.alt} onClose={() => setAmpliada(null)} />}
     </div>
   );
+}
+
+function arquivoDeTransferencia(data: DataTransfer | null) {
+  if (!data) return null;
+  const solto = [...data.files].find((file) => imagemAceita(file));
+  if (solto) return solto;
+  for (const item of data.items) {
+    if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+    const file = item.getAsFile();
+    if (file && imagemAceita(file)) return file;
+  }
+  return null;
+}
+
+function faixaNoPonto(x: number, y: number) {
+  const comPonto = document as Document & { caretRangeFromPoint?: (px: number, py: number) => Range | null };
+  if (comPonto.caretRangeFromPoint) return comPonto.caretRangeFromPoint(x, y);
+  const pos = document.caretPositionFromPoint?.(x, y);
+  if (!pos) return null;
+  const range = document.createRange();
+  range.setStart(pos.offsetNode, pos.offset);
+  range.collapse(true);
+  return range;
 }
 
 function Divisor() {

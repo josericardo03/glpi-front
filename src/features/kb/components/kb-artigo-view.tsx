@@ -91,7 +91,7 @@ export function KbArtigoView({ id }: { id: number }) {
             </div>
             <h1 className="mt-4 text-3xl font-bold leading-tight text-brand-darker md:text-4xl">{a.titulo}</h1>
             <ConteudoArtigo markdown={a.conteudoMarkdown} className="mt-6 border-t border-brand-border pt-2" />
-            <AnexosArtigo artigoId={a.id} imagens={a.imagens} pdfs={a.pdfs} podeEditar={podeEditar} />
+            <AnexosArtigo artigoId={a.id} imagens={a.imagens} pdfs={a.pdfs} podeEditar={podeEditar} texto={a.conteudoMarkdown} />
 
             {publicado && (
               <div className="mt-10 border-t border-brand-border pt-6 text-center">

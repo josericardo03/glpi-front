@@ -3,6 +3,11 @@ export function caminhoImagem(artigoId: number, imagemId: number) {
   return `/api/artigos-kb/${artigoId}/anexos/${imagemId}`;
 }
 
+/** A imagem já está no corpo do artigo, então a lista de baixo não a repete. */
+export function imagemNoTexto(markdown: string, anexoId: number) {
+  return new RegExp(`/(?:imagens|anexos)/${anexoId}(?!\\d)`).test(markdown);
+}
+
 export function refImagem(href: string): { artigoId: number; anexoId: number; rota: 'imagens' | 'anexos' } | null {
   const m = href.match(/\/api\/(?:artigos-kb|kb\/artigos)\/(\d+)\/(imagens|anexos)\/(\d+)/);
   if (!m) return null;

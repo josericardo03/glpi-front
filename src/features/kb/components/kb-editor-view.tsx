@@ -167,7 +167,7 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
                 {palavras} {palavras === 1 ? 'palavra' : 'palavras'} · cerca de {Math.max(1, Math.round(palavras / 200))} min de leitura
               </p>
             </div>
-            {artigo && <AnexosArtigo artigoId={artigo.id} imagens={artigo.imagens} pdfs={artigo.pdfs} podeEditar />}
+            {artigo && <AnexosArtigo artigoId={artigo.id} imagens={artigo.imagens} pdfs={artigo.pdfs} podeEditar texto={conteudo} />}
           </CardBody>
         </Card>
 

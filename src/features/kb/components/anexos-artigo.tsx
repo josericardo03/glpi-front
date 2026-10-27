@@ -1,16 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, Trash2 } from 'lucide-react';
 import { Button, ConfirmModal } from '@/components/ui';
 import { formatBytes } from '@/lib/format';
 import type { AnexoArtigo } from '@/types';
-import { IMAGEM_MAX_BYTES, pdfAceito } from '../imagem';
+import { imagemNoTexto, IMAGEM_MAX_BYTES, pdfAceito } from '../imagem';
 import { kbService } from '../kb.service';
 import { useEnviarAnexoArtigo, useRemoverAnexoArtigo } from '../use-kb';
 import { ImagemAmpliada } from './conteudo-artigo';
 
-export function AnexosArtigo({ artigoId, imagens, pdfs, podeEditar }: { artigoId: number; imagens: AnexoArtigo[]; pdfs: AnexoArtigo[]; podeEditar: boolean }) {
+export function AnexosArtigo({ artigoId, imagens, pdfs, podeEditar, texto = '' }: { artigoId: number; imagens: AnexoArtigo[]; pdfs: AnexoArtigo[]; podeEditar: boolean; texto?: string }) {
   const enviar = useEnviarAnexoArtigo();
   const remover = useRemoverAnexoArtigo();
   const arquivo = useRef<HTMLInputElement>(null);
@@ -18,13 +18,18 @@ export function AnexosArtigo({ artigoId, imagens, pdfs, podeEditar }: { artigoId
   const [ampliada, setAmpliada] = useState<{ src: string; alt: string } | null>(null);
   const [apagar, setApagar] = useState<AnexoArtigo | null>(null);
   const [erro, setErro] = useState('');
+  const soltas = useMemo(() => imagens.filter((img) => !imagemNoTexto(texto, img.id)), [imagens, texto]);
+  const idsSoltas = soltas.map((img) => img.id).join(',');
+  const soltasRef = useRef(soltas);
+  soltasRef.current = soltas;
 
   useEffect(() => {
+    const lista = soltasRef.current;
     let ativo = true;
     const urls: string[] = [];
     setFotos({});
     void Promise.all(
-      imagens.map(async (img) => {
+      lista.map(async (img) => {
         try {
           const blob = await kbService.baixarArquivo(artigoId, img.id, 'anexos');
           const url = URL.createObjectURL(blob);
@@ -43,7 +48,7 @@ export function AnexosArtigo({ artigoId, imagens, pdfs, podeEditar }: { artigoId
       ativo = false;
       urls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [artigoId, imagens]);
+  }, [artigoId, idsSoltas]);
 
   function escolherPdf(file: File | undefined) {
     if (!file) return;
@@ -66,17 +71,17 @@ export function AnexosArtigo({ artigoId, imagens, pdfs, podeEditar }: { artigoId
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
+  if (!soltas.length && !pdfs.length && !podeEditar) return null;
+
   return (
     <section className="mt-8 space-y-6 border-t border-brand-border pt-6">
+      {soltas.length > 0 && (
       <div>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-brand-darker">Imagens</h2>
         </div>
-        {imagens.length === 0 ? (
-          <p className="text-sm text-brand-muted">Nenhuma imagem anexada.</p>
-        ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
-            {imagens.map((img) => (
+            {soltas.map((img) => (
               <li key={img.id} className="overflow-hidden rounded-lg border border-brand-border">
                 <button type="button" className="block w-full bg-slate-50" onClick={() => fotos[img.id] && setAmpliada({ src: fotos[img.id]!, alt: img.nomeArquivo })}>
                   {fotos[img.id] ? (
@@ -97,9 +102,10 @@ export function AnexosArtigo({ artigoId, imagens, pdfs, podeEditar }: { artigoId
               </li>
             ))}
           </ul>
-        )}
       </div>
+      )}
 
+      {(pdfs.length > 0 || podeEditar) && (
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-brand-darker">PDFs</h2>
@@ -145,6 +151,7 @@ export function AnexosArtigo({ artigoId, imagens, pdfs, podeEditar }: { artigoId
           </ul>
         )}
       </div>
+      )}
 
       {ampliada && <ImagemAmpliada src={ampliada.src} alt={ampliada.alt} onClose={() => setAmpliada(null)} />}
       <ConfirmModal
