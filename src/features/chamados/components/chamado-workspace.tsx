@@ -278,7 +278,7 @@ export function ChamadoWorkspace({ id }: { id: number }) {
                   <p className="text-sm italic text-brand-muted">Nenhum técnico atribuído</p>
                 )}
               </div>
-              {tecnico && recursos.atribuicaoChamado && (
+              {tecnico && recursos.atribuicaoTecnico && (
                 <Button variant="ghost" size="sm" className="w-full uppercase tracking-wide" icon={<ArrowLeftRight className="h-4 w-4" />} onClick={() => setReatribuir(true)}>
                   Reatribuir Técnico
                 </Button>

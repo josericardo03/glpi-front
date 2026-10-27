@@ -239,7 +239,7 @@ export const aprovacoes: Aprovacao[] = [
   { id: 4403, titulo: 'Janela de manutenção - Cluster SQL', descricao: 'Aplicação de patch cumulativo no cluster SQL de produção durante a madrugada de sábado.', origem: 'MUDANCA', chamadoId: null, mudancaId: 881, solicitanteNome: 'Ricardo Andrade', aprovadorNome: 'Mariana Souza', prioridade: 'ALTA', risco: 'ALTO', custoEstimado: null, solicitadoEm: ago(300), status: 'PENDENTE' },
   { id: 4404, titulo: 'Licença Adobe Creative Cloud', descricao: 'Aquisição de 3 licenças adicionais para a equipe de Marketing.', origem: 'CHAMADO', chamadoId: 10246, mudancaId: null, solicitanteNome: 'Juliana Costa', aprovadorNome: 'Mariana Souza', prioridade: 'MEDIA', risco: 'BAIXO', custoEstimado: 4500, solicitadoEm: ago(1440), status: 'APROVADA', decididoEm: ago(600), justificativaAprovador: 'Dentro do orçamento do trimestre.' },
   { id: 4405, titulo: 'Migração do firewall de borda', descricao: 'Substituição do firewall legado por appliance de nova geração com HA.', origem: 'MUDANCA', chamadoId: null, mudancaId: 882, solicitanteNome: 'Jorge Santos', aprovadorNome: 'Mariana Souza', prioridade: 'CRITICA', risco: 'ALTO', custoEstimado: 85000, solicitadoEm: ago(2880), status: 'PENDENTE' },
-].map((a) => ({ decididoEm: null, justificativaAprovador: null, ...a }) as Aprovacao);
+].map((a) => ({ decididoEm: null, justificativaAprovador: null, aprovadorId: 1, ...a }) as Aprovacao);
 
 export const notificacoes: Notificacao[] = [
   { id: 1, tipo: 'CHAMADO', titulo: 'Novo Chamado: Incidente de Rede Crítico', mensagem: 'O servidor principal da filial Norte reportou queda de conexão. SLA de resposta expira em 15 minutos.', link: '/chamados/10245', urgente: false, lida: false, criadaEm: ago(5) },
@@ -304,6 +304,8 @@ export const kbArtigos: KbArtigo[] = [
   meuVoto: null,
   publicadoEm: ago(publicadoHa as number),
   atualizadoEm: ago((publicadoHa as number) / 2),
+  imagens: [],
+  pdfs: [],
 }));
 
 export const politicasSla: PoliticaSla[] = (

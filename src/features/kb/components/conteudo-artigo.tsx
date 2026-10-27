@@ -17,7 +17,7 @@ export async function carregarImagens(root: ParentNode, vivo: () => boolean, url
       const ref = refImagem(img.dataset.api ?? '');
       if (!ref) return;
       try {
-        const blob = await kbService.baixarImagem(ref.artigoId, ref.imagemId);
+        const blob = await kbService.baixarArquivo(ref.artigoId, ref.anexoId, ref.rota);
         const url = URL.createObjectURL(blob);
         if (!vivo()) {
           URL.revokeObjectURL(url);

@@ -26,7 +26,7 @@ import { matches } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import { textoInvalido } from '@/lib/validation';
 import type { AtivoInativo, Departamento, DepartamentoInput } from '@/types';
-import { useCreateDepartamento, useDepartamentos, useUsuarioOptions } from '../use-cadastros';
+import { useCreateDepartamento, useDepartamentos, useUpdateDepartamento, useUsuarioOptions } from '../use-cadastros';
 
 const STATUS: Record<AtivoInativo, { label: string; tone: BadgeTone }> = {
   ATIVO: { label: 'Ativo', tone: 'success' },
@@ -47,6 +47,9 @@ export function DepartamentosView() {
   const { data, isLoading, isError, error, refetch } = useDepartamentos();
   const usuarios = useUsuarioOptions();
   const create = useCreateDepartamento();
+  const update = useUpdateDepartamento();
+  const [editando, setEditando] = useState<Departamento | null>(null);
+  const [status, setStatus] = useState<AtivoInativo>('ATIVO');
   const [term, setTerm] = useState('');
   const search = useDebounce(term, 200);
   const [layout, setLayout] = useState<'lista' | 'grade'>('lista');
@@ -55,13 +58,14 @@ export function DepartamentosView() {
 
   const porId = useMemo(() => new Map((data ?? []).map((d) => [d.id, d])), [data]);
   const lista = useMemo(() => (data ?? []).filter((d) => matches(d.nome, search) || matches(d.sigla, search)), [data, search]);
-  const siglasEmUso = useMemo(() => new Set((data ?? []).map((d) => d.sigla.toUpperCase())), [data]);
+  const siglasEmUso = useMemo(() => new Set((data ?? []).filter((d) => d.id !== editando?.id).map((d) => d.sigla.toUpperCase())), [data, editando]);
   const totalUsuarios = data?.reduce((s, d) => s + d.totalUsuarios, 0) ?? 0;
   const maisPopuloso = data?.length ? data.reduce((a, b) => (b.totalUsuarios > a.totalUsuarios ? b : a)) : undefined;
   const subordinados = data?.filter((d) => d.departamentoPaiId).length ?? 0;
-  const paiOptions = (data ?? []).filter((d) => d.status === 'ATIVO').map((d) => ({ value: d.id, label: `${d.sigla} · ${d.nome}` }));
+  const paiOptions = (data ?? []).filter((d) => d.id !== editando?.id && (d.status === 'ATIVO' || d.id === form.departamentoPaiId)).map((d) => ({ value: d.id, label: `${d.sigla} · ${d.nome}` }));
   const erros = validar(form, siglasEmUso);
-  const valido = !erros.sigla && !erros.nome;
+  const erroPai = editando && form.departamentoPaiId === editando.id ? 'Um departamento não pode ser pai dele mesmo.' : undefined;
+  const valido = !erros.sigla && !erros.nome && !erroPai;
 
   const columns = useMemo<Column<Departamento>[]>(
     () => [
@@ -88,13 +92,23 @@ export function DepartamentosView() {
 
   function fechar() {
     setOpen(false);
+    setEditando(null);
+    setStatus('ATIVO');
     setForm(EMPTY);
+  }
+
+  function abrir(d?: Departamento) {
+    setEditando(d ?? null);
+    setStatus(d?.status ?? 'ATIVO');
+    setForm(d ? { sigla: d.sigla, nome: d.nome, gestorId: d.gestorId, departamentoPaiId: d.departamentoPaiId } : EMPTY);
+    setOpen(true);
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!valido) return;
-    create.mutate(form, { onSuccess: fechar });
+    if (editando) update.mutate({ id: editando.id, antes: editando, input: { ...form, status } }, { onSuccess: fechar });
+    else create.mutate(form, { onSuccess: fechar });
   }
 
   return (
@@ -103,7 +117,7 @@ export function DepartamentosView() {
         title="Gestão de Departamentos"
         description="Visualize, gerencie e organize os setores da instituição."
         actions={
-          <Button size="lg" icon={<Plus className="h-4 w-4" />} onClick={() => setOpen(true)}>
+          <Button size="lg" icon={<Plus className="h-4 w-4" />} onClick={() => abrir()}>
             Novo Departamento
           </Button>
         }
@@ -152,7 +166,7 @@ export function DepartamentosView() {
       {isError ? (
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
       ) : layout === 'lista' ? (
-        <DataTable columns={columns} data={lista} loading={isLoading} caption="Departamentos" rowKey={(d) => d.id} emptyMessage="Nenhum departamento encontrado." />
+        <DataTable columns={columns} data={lista} loading={isLoading} caption="Departamentos" rowKey={(d) => d.id} onRowClick={abrir} emptyMessage="Nenhum departamento encontrado." />
       ) : !isLoading && !lista.length ? (
         <EmptyState title="Nenhum departamento encontrado" />
       ) : (
@@ -166,6 +180,9 @@ export function DepartamentosView() {
                 </div>
                 <p className="mt-2 font-semibold text-brand-darker">{d.nome}</p>
                 {d.descricao && <p className="text-xs text-brand-muted">{d.descricao}</p>}
+                <Button variant="ghost" size="sm" className="mt-3" onClick={() => abrir(d)}>
+                  Editar
+                </Button>
                 <div className="mt-4 flex justify-between text-sm">
                   <span className="text-brand-muted">{d.gestorNome ?? 'Sem responsável'}</span>
                   <strong>
@@ -181,12 +198,12 @@ export function DepartamentosView() {
       <Modal
         open={open}
         onClose={fechar}
-        title="Novo Departamento"
-        description="Defina um departamento pai para montar o organograma da instituição."
+        title={editando ? 'Editar Departamento' : 'Novo Departamento'}
+        description={editando ? 'Altere só o que mudou. A linha da lista também abre esta edição.' : 'Defina um departamento pai para montar o organograma da instituição.'}
         footer={
           <>
             <Button variant="outline" onClick={fechar}>Cancelar</Button>
-            <Button type="submit" form="form-dep" disabled={!valido} loading={create.isPending}>
+            <Button type="submit" form="form-dep" disabled={!valido} loading={create.isPending || update.isPending}>
               Salvar
             </Button>
           </>
@@ -218,7 +235,22 @@ export function DepartamentosView() {
               />
             )}
           </Field>
-          <Field label="Departamento Pai" className="sm:col-span-2">
+          {editando && (
+            <Field label="Status" className="sm:col-span-2">
+              {(id) => (
+                <Select
+                  id={id}
+                  options={[
+                    { value: 'ATIVO', label: 'Ativo' },
+                    { value: 'INATIVO', label: 'Inativo' },
+                  ]}
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as AtivoInativo)}
+                />
+              )}
+            </Field>
+          )}
+          <Field label="Departamento Pai" className="sm:col-span-2" error={erroPai}>
             {(id) => (
               <Select
                 id={id}

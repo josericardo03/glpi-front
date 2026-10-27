@@ -78,7 +78,7 @@ export function NovoChamadoForm() {
   const prioridade = calcularPrioridade(impacto, urgencia);
   const { data: politicas } = usePoliticasSla();
   const politica = politicas && politicaAplicavel(politicas, prioridade, tipo);
-  const semPolitica = !!politicas && !politica;
+  const semPolitica = !!politicas && !politicas.some((p) => p.ativa);
 
   function trocarTipo(novo: TipoChamado) {
     setTipo(novo);
@@ -103,7 +103,7 @@ export function NovoChamadoForm() {
       return;
     }
     if (semPolitica) {
-      toast.error('Não há política de SLA ativa para esta prioridade e tipo. Ajuste impacto/urgência ou acione o administrador.');
+      toast.error('Não há política de SLA ativa neste cliente. Acione o administrador.');
       return;
     }
     const input: ChamadoInput = {
@@ -212,7 +212,7 @@ export function NovoChamadoForm() {
                 </p>
                 {semPolitica && (
                   <p role="alert" className="mt-2 rounded bg-red-500/15 px-2 py-1.5 text-xs font-medium text-red-200">
-                    Não há política de SLA ativa para esta prioridade e tipo; a abertura será recusada.
+                    Não há política de SLA ativa neste cliente; a abertura será recusada.
                   </p>
                 )}
               </div>

@@ -172,6 +172,34 @@ export const departamentosService = {
         return d;
       },
     ),
+
+  update: (id: number, antes: Departamento, input: DepartamentoInput & { status: AtivoInativo }) =>
+    request<unknown>(
+      async () => {
+        const sigla = input.sigla.trim().toUpperCase();
+        const nome = input.nome.trim();
+        if (input.departamentoPaiId === id) throw new Error('Um departamento não pode ser pai dele mesmo.');
+        const body: Record<string, unknown> = {};
+        if (sigla !== antes.sigla) body.codigo_sigla = sigla;
+        if (nome !== antes.nome) body.nome = nome;
+        if (input.gestorId !== antes.gestorId) body.id_responsavel = input.gestorId;
+        if (input.departamentoPaiId !== antes.departamentoPaiId) body.id_departamento_pai = input.departamentoPaiId;
+        if (input.status !== antes.status) body.status = input.status;
+        if (Object.keys(body).length) {
+          await data(api.patch(`/departamentos/${id}`, body));
+          await invalidateLookups();
+        }
+      },
+      () => {
+        const d = db.departamentos.find((x) => x.id === id);
+        if (!d) throw new Error('Departamento não encontrado (HTTP 404).');
+        const sigla = input.sigla.trim().toUpperCase();
+        if (db.departamentos.some((x) => x.id !== id && x.sigla === sigla)) throw new Error(`A sigla ${sigla} já está em uso (HTTP 409).`);
+        if (input.departamentoPaiId === id) throw new Error('Um departamento não pode ser pai dele mesmo.');
+        Object.assign(d, { ...input, sigla, gestorNome: db.usuarios.find((u) => u.id === input.gestorId)?.nome ?? null });
+        return d;
+      },
+    ),
 };
 
 export const categoriasService = {
@@ -208,6 +236,30 @@ export const categoriasService = {
         return c;
       },
     ),
+
+  update: (id: number, antes: Categoria, input: CategoriaInput) =>
+    request<unknown>(
+      async () => {
+        const nome = input.nome.trim();
+        if (input.categoriaPaiId === id) throw new Error('Uma categoria não pode ser pai dela mesma.');
+        const body: Record<string, unknown> = {};
+        if (nome !== antes.nome) body.nome = nome;
+        if (input.aplicacao !== antes.aplicacao) body.tipo_aplicacao = input.aplicacao;
+        if (input.categoriaPaiId !== antes.categoriaPaiId) body.id_categoria_pai = input.categoriaPaiId;
+        if (input.status !== antes.status) body.status = input.status;
+        if (Object.keys(body).length) {
+          await data(api.patch(`/categorias/${id}`, body));
+          await invalidateLookups();
+        }
+      },
+      () => {
+        const c = db.categorias.find((x) => x.id === id);
+        if (!c) throw new Error('Categoria não encontrada (HTTP 404).');
+        if (input.categoriaPaiId === id) throw new Error('Uma categoria não pode ser pai dela mesma.');
+        Object.assign(c, { ...input, nome: input.nome.trim() });
+        return c;
+      },
+    ),
 };
 
 /** A API não expõe GET de membros; a lista de membros só existe no modo mock. */
@@ -235,6 +287,28 @@ export const gruposService = {
       () => {
         const g: GrupoSuporte = { ...input, id: uid(), membros: [] };
         db.grupos.push(g);
+        return g;
+      },
+    ),
+
+  update: (id: number, antes: GrupoSuporte, input: GrupoInput) =>
+    request<unknown>(
+      async () => {
+        const nome = input.nome.trim();
+        const descricao = input.descricao.trim();
+        const body: Record<string, unknown> = {};
+        if (nome !== antes.nome) body.nome = nome;
+        if (descricao !== antes.descricao.trim()) body.descricao = descricao || null;
+        if (input.status !== antes.status) body.status = input.status;
+        if (Object.keys(body).length) {
+          await data(api.patch(`/grupos-suporte/${id}`, body));
+          await invalidateLookups();
+        }
+      },
+      () => {
+        const g = db.grupos.find((x) => x.id === id);
+        if (!g) throw new Error('Grupo não encontrado (HTTP 404).');
+        Object.assign(g, { nome: input.nome.trim(), descricao: input.descricao.trim(), status: input.status });
         return g;
       },
     ),

@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { categoriaAceitaTipo } from '@/features/chamados/utils/prioridade';
-import type { CategoriaInput, DepartamentoInput, GrupoInput, MembroInput, TipoChamado, UsuarioInput } from '@/types';
+import type { AtivoInativo, Categoria, CategoriaInput, Departamento, DepartamentoInput, GrupoInput, GrupoSuporte, MembroInput, TipoChamado, UsuarioInput } from '@/types';
 import {
   categoriasService,
   departamentosService,
@@ -93,9 +93,27 @@ export const useUpdateUsuario = (successMessage = 'Usuário atualizado.') =>
   });
 export const useCreateDepartamento = () =>
   useApiMutation({ mutationFn: (i: DepartamentoInput) => departamentosService.create(i), invalidate: [cadastrosKeys.departamentos], successMessage: 'Departamento criado.' });
+export const useUpdateDepartamento = () =>
+  useApiMutation({
+    mutationFn: (i: { id: number; antes: Departamento; input: DepartamentoInput & { status: AtivoInativo } }) => departamentosService.update(i.id, i.antes, i.input),
+    invalidate: [cadastrosKeys.departamentos, cadastrosKeys.usuarios],
+    successMessage: 'Departamento atualizado.',
+  });
 export const useCreateCategoria = () =>
   useApiMutation({ mutationFn: (i: CategoriaInput) => categoriasService.create(i), invalidate: [cadastrosKeys.categorias], successMessage: 'Categoria salva.' });
+export const useUpdateCategoria = () =>
+  useApiMutation({
+    mutationFn: (i: { id: number; antes: Categoria; input: CategoriaInput }) => categoriasService.update(i.id, i.antes, i.input),
+    invalidate: [cadastrosKeys.categorias],
+    successMessage: 'Categoria atualizada.',
+  });
 export const useCreateGrupo = () =>
   useApiMutation({ mutationFn: (i: GrupoInput) => gruposService.create(i), invalidate: [cadastrosKeys.grupos], successMessage: 'Grupo criado.' });
+export const useUpdateGrupo = () =>
+  useApiMutation({
+    mutationFn: (i: { id: number; antes: GrupoSuporte; input: GrupoInput }) => gruposService.update(i.id, i.antes, i.input),
+    invalidate: [cadastrosKeys.grupos],
+    successMessage: 'Grupo atualizado.',
+  });
 export const useAddMembro = () =>
   useApiMutation({ mutationFn: (i: MembroInput) => gruposService.addMembro(i), invalidate: [cadastrosKeys.grupos], successMessage: 'Técnico adicionado ao grupo.' });

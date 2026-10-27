@@ -83,7 +83,7 @@ export const useChamado = (id: number) =>
 
 function erroAbertura(err: unknown) {
   const status = httpStatus(err);
-  if (status === 422) return 'Não há política de SLA ativa para a prioridade e o tipo deste chamado. Ajuste impacto/urgência ou acione o administrador.';
+  if (status === 422) return 'Não há política de SLA ativa neste cliente. Acione o administrador.';
   const msg = getErrorMessage(err);
   if (status === 400 && msg === HTTP_MESSAGES[400]) return 'A categoria escolhida não é válida para este tipo de chamado.';
   return msg;

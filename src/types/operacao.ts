@@ -10,6 +10,7 @@ export interface Aprovacao {
   chamadoId: ID | null;
   mudancaId: ID | null;
   solicitanteNome: string;
+  aprovadorId: ID;
   aprovadorNome: string | null;
   prioridade: Prioridade;
   /** `null` quando a API não informa o risco. */
@@ -80,6 +81,16 @@ export interface KbArtigo {
   meuVoto: 'UTIL' | 'NAO_UTIL' | null;
   publicadoEm: string;
   atualizadoEm: string;
+  imagens: AnexoArtigo[];
+  pdfs: AnexoArtigo[];
+}
+
+export interface AnexoArtigo {
+  id: ID;
+  nomeArquivo: string;
+  tipoMime: string;
+  tamanhoBytes: number;
+  dataUpload: string;
 }
 
 export type KbArtigoResumo = Omit<KbArtigo, 'conteudoMarkdown'>;

@@ -1,12 +1,12 @@
 import { isAxiosError } from 'axios';
 import { api, getErrorMessage, httpStatus } from '@/lib/api';
 import { byId, currentUserId, lookups } from '@/lib/backend/lookups';
-import type { ApiArtigoKb, ApiCategoriaKb, ApiUsuario } from '@/lib/backend/types';
+import type { ApiAnexoArtigo, ApiArtigoKb, ApiCategoriaKb, ApiUsuario } from '@/lib/backend/types';
 import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
 import { queryClient } from '@/lib/query-client';
 import * as db from '@/mocks/db';
-import type { KbArtigo, KbArtigoInput, KbArtigoResumo, KbCategoria, KbCategoriaInput, StatusArtigoKb } from '@/types';
-import { imagemAceita, IMAGEM_MAX_BYTES } from './imagem';
+import type { AnexoArtigo, KbArtigo, KbArtigoInput, KbArtigoResumo, KbCategoria, KbCategoriaInput, StatusArtigoKb } from '@/types';
+import { anexoAceito, imagemAceita, IMAGEM_MAX_BYTES, pdfAceito } from './imagem';
 
 export interface ArtigosFiltros {
   search?: string;
@@ -65,6 +65,18 @@ function toArtigo(a: ApiArtigoKb, ctx?: { usuarios: Map<number, ApiUsuario>; cat
     meuVoto: a.meu_voto == null ? null : a.meu_voto ? 'UTIL' : 'NAO_UTIL',
     publicadoEm: a.data_criacao,
     atualizadoEm: a.data_atualizacao,
+    imagens: (a.imagens ?? []).map(toAnexo),
+    pdfs: (a.pdfs ?? []).map(toAnexo),
+  };
+}
+
+function toAnexo(a: ApiAnexoArtigo): AnexoArtigo {
+  return {
+    id: a.id,
+    nomeArquivo: a.nome_arquivo,
+    tipoMime: a.tipo_mime,
+    tamanhoBytes: Number(a.tamanho_bytes),
+    dataUpload: a.data_upload,
   };
 }
 
@@ -185,6 +197,8 @@ export const kbService = {
           autorId: currentUserId() ?? 0,
           autorNome: 'Você',
           autorCargo: '',
+          imagens: [],
+          pdfs: [],
           visualizacoes: 0,
           votosUteis: 0,
           votosNaoUteis: 0,
@@ -244,60 +258,92 @@ export const kbService = {
       },
     ),
 
-  /**
-   * Envia a imagem do artigo. O texto guarda só o caminho; o arquivo não entra em `conteudo`.
-   * PNG, JPEG, GIF e WebP, até 20 MB.
-   */
-  enviarImagem: (artigoId: number, file: File) => {
-    if (file.size > IMAGEM_MAX_BYTES) return Promise.reject(new Error('A imagem passa de 20 MB.'));
-    if (!imagemAceita(file)) return Promise.reject(new Error('Envie uma imagem PNG, JPEG, GIF ou WebP.'));
+  /** Envia imagem ou PDF. O texto do artigo guarda só o caminho da imagem. */
+  enviarAnexo: (artigoId: number, file: File) => {
+    if (file.size > IMAGEM_MAX_BYTES) return Promise.reject(new Error('O arquivo passa de 20 MB.'));
+    if (!anexoAceito(file)) return Promise.reject(new Error('Envie uma imagem PNG, JPEG, GIF, WebP ou um PDF.'));
     const form = new FormData();
     form.append('arquivo', file, file.name);
     return request<ImagemArtigo>(
       async () => {
         try {
-          const row = await data(api.post<ImagemArtigo>(`/artigos-kb/${artigoId}/imagens`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 }));
+          const row = await data(api.post<ImagemArtigo>(`/artigos-kb/${artigoId}/anexos`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 }));
           return { ...row, tamanho_bytes: Number(row.tamanho_bytes) };
         } catch (err) {
-          throw new Error(mensagemImagem(err));
+          throw new Error(mensagemArquivo(err));
         }
       },
-      () => {
-        const id = Math.max(0, ...[...imagensMock.keys()].map((k) => Number(k.split(':')[1]))) + 1;
-        const imagem: ImagemArtigo = {
-          id,
-          id_cliente: 1,
-          id_artigo: artigoId,
-          nome_arquivo: file.name,
-          caminho_storage: `mock://${artigoId}/${id}-${file.name}`,
-          tipo_mime: file.type || 'image/png',
-          tamanho_bytes: file.size,
-          data_upload: new Date().toISOString(),
-        };
-        imagensMock.set(`${artigoId}:${id}`, { imagem, blob: file });
-        return imagem;
-      },
+      () => guardarMock(artigoId, file),
     );
   },
 
-  /** Baixa a imagem com o token. A resposta vira um endereço local para a tag img. */
-  baixarImagem: (artigoId: number, imagemId: number) =>
-    request<Blob>(
+  /** Imagem no meio do texto. PDF fica só na lista de anexos. */
+  enviarImagem: (artigoId: number, file: File) => {
+    if (!imagemAceita(file)) return Promise.reject(new Error('Envie uma imagem PNG, JPEG, GIF ou WebP.'));
+    return kbService.enviarAnexo(artigoId, file);
+  },
+
+  removerAnexo: (artigoId: number, anexoId: number) =>
+    request<{ removido: boolean }>(
       async () => {
         try {
-          const r = await api.get<Blob>(`/artigos-kb/${artigoId}/imagens/${imagemId}`, { responseType: 'blob', timeout: 120_000 });
-          return r.data;
+          return await data(api.delete<{ removido: boolean }>(`/artigos-kb/${artigoId}/anexos/${anexoId}`));
         } catch (err) {
-          throw new Error(mensagemImagem(err));
+          throw new Error(mensagemArquivo(err));
         }
       },
       () => {
-        const item = imagensMock.get(`${artigoId}:${imagemId}`);
-        if (!item) throw new Error('Artigo ou imagem não encontrado.');
+        const artigo = db.kbArtigos.find((a) => a.id === artigoId);
+        if (artigo) {
+          artigo.imagens = artigo.imagens.filter((a) => a.id !== anexoId);
+          artigo.pdfs = artigo.pdfs.filter((a) => a.id !== anexoId);
+        }
+        imagensMock.delete(`anexos:${artigoId}:${anexoId}`);
+        imagensMock.delete(`imagens:${artigoId}:${anexoId}`);
+        return { removido: true };
+      },
+    ),
+
+  /** Baixa o arquivo com o token. A resposta vira um endereço local para a tag img ou para abrir o PDF. */
+  baixarArquivo: (artigoId: number, arquivoId: number, rota: 'imagens' | 'anexos' = 'anexos') =>
+    request<Blob>(
+      async () => {
+        try {
+          const r = await api.get<Blob>(`/artigos-kb/${artigoId}/${rota}/${arquivoId}`, { responseType: 'blob', timeout: 120_000 });
+          return r.data;
+        } catch (err) {
+          throw new Error(mensagemArquivo(err));
+        }
+      },
+      () => {
+        const item = imagensMock.get(`${rota}:${artigoId}:${arquivoId}`) ?? imagensMock.get(`${artigoId}:${arquivoId}`);
+        if (!item) throw new Error('Artigo ou arquivo não encontrado.');
         return item.blob;
       },
     ),
 };
+
+function guardarMock(artigoId: number, file: File): ImagemArtigo {
+  const id = Math.max(0, ...[...imagensMock.keys()].map((k) => Number(k.split(':').pop()))) + 1;
+  const imagem: ImagemArtigo = {
+    id,
+    id_cliente: 1,
+    id_artigo: artigoId,
+    nome_arquivo: file.name,
+    caminho_storage: `mock://${artigoId}/${id}-${file.name}`,
+    tipo_mime: file.type || (pdfAceito(file) ? 'application/pdf' : 'image/png'),
+    tamanho_bytes: file.size,
+    data_upload: new Date().toISOString(),
+  };
+  imagensMock.set(`anexos:${artigoId}:${id}`, { imagem, blob: file });
+  const artigo = db.kbArtigos.find((a) => a.id === artigoId);
+  if (artigo) {
+    const anexo: AnexoArtigo = { id, nomeArquivo: file.name, tipoMime: imagem.tipo_mime, tamanhoBytes: file.size, dataUpload: imagem.data_upload };
+    if (pdfAceito(file)) artigo.pdfs.push(anexo);
+    else artigo.imagens.push(anexo);
+  }
+  return imagem;
+}
 
 export interface ImagemArtigo {
   id: number;
@@ -312,10 +358,10 @@ export interface ImagemArtigo {
 
 const imagensMock = new Map<string, { imagem: ImagemArtigo; blob: Blob }>();
 
-function mensagemImagem(err: unknown) {
+function mensagemArquivo(err: unknown) {
   const status = httpStatus(err);
-  if (status === 400) return 'Envie uma imagem PNG, JPEG, GIF ou WebP.';
-  if (status === 413) return 'A imagem passa de 20 MB.';
-  if (status === 404) return 'Artigo ou imagem não encontrado.';
+  if (status === 400) return 'Envie uma imagem PNG, JPEG, GIF, WebP ou um PDF.';
+  if (status === 413) return 'O arquivo passa de 20 MB.';
+  if (status === 404) return 'Artigo ou arquivo não encontrado.';
   return getErrorMessage(err);
 }

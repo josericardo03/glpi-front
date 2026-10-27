@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import type { AtivoInput, Especificacao, Manutencao } from '@/types';
+import type { Ativo, AtivoInput, Especificacao, Manutencao } from '@/types';
 import { ativosService } from './ativos.service';
 
 export const ativosKeys = {
@@ -18,6 +18,13 @@ export const useAtivo = (id: number) =>
 
 export const useCreateAtivo = () =>
   useApiMutation({ mutationFn: (i: AtivoInput) => ativosService.create(i), invalidate: [ativosKeys.all], successMessage: (_, i) => `Ativo ${i.codigo.trim().toUpperCase()} cadastrado.` });
+
+export const useUpdateAtivo = () =>
+  useApiMutation({
+    mutationFn: (i: { id: number; antes: Ativo; input: AtivoInput }) => ativosService.update(i.id, i.antes, i.input),
+    invalidate: [ativosKeys.all],
+    successMessage: 'Ativo atualizado.',
+  });
 
 export const useAddEspecificacao = (id: number) =>
   useApiMutation({

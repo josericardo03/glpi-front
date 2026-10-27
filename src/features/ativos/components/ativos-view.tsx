@@ -30,7 +30,7 @@ import { textoInvalido } from '@/lib/validation';
 import type { Ativo, AtivoFiltros, AtivoInput, StatusAtivo, TipoAtivo } from '@/types';
 import { useUsuarioOptions } from '@/features/cadastros/use-cadastros';
 import { filtrarAtivos, resumirAtivos } from '../ativos.service';
-import { useAtivos, useCreateAtivo } from '../use-ativos';
+import { useAtivos, useCreateAtivo, useUpdateAtivo } from '../use-ativos';
 import { AtivoIcon, STATUS_ATIVO, STATUS_ATIVO_OPTIONS, StatusAtivoBadge, TIPO_ATIVO, TIPO_OPTIONS } from './ativo-meta';
 
 const columns: Column<Ativo>[] = [
@@ -71,8 +71,10 @@ export function AtivosView() {
   const search = useDebounce(filters.search);
   const { data, isLoading, isError, error, refetch } = useAtivos();
   const create = useCreateAtivo();
+  const update = useUpdateAtivo();
   const usuarios = useUsuarioOptions();
   const [open, setOpen] = useState(false);
+  const [editando, setEditando] = useState<Ativo | null>(null);
   const [form, setForm] = useState<AtivoInput>(EMPTY);
 
   const r = useMemo(() => (data ? resumirAtivos(data) : undefined), [data]);
@@ -89,13 +91,49 @@ export function AtivosView() {
 
   function fechar() {
     setOpen(false);
+    setEditando(null);
     setForm(EMPTY);
+  }
+
+  function abrirEdicao(a: Ativo) {
+    setEditando(a);
+    setForm({
+      codigo: a.codigo,
+      nome: a.nome,
+      tipo: a.tipo,
+      status: a.status,
+      responsavelId: a.responsavelId,
+      dataAquisicao: a.dataAquisicao?.slice(0, 10) ?? '',
+    });
+    setOpen(true);
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (valid) create.mutate(form, { onSuccess: fechar });
+    if (!valid) return;
+    if (editando) update.mutate({ id: editando.id, antes: editando, input: form }, { onSuccess: fechar });
+    else create.mutate(form, { onSuccess: fechar });
   }
+
+  const colunas: Column<Ativo>[] = [
+    ...columns,
+    {
+      key: 'editar',
+      header: '',
+      cell: (a) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            abrirEdicao(a);
+          }}
+        >
+          Editar
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -155,7 +193,7 @@ export function AtivosView() {
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />
       ) : (
         <DataTable
-          columns={columns}
+          columns={colunas}
           data={data ? pagina.data : undefined}
           loading={isLoading}
           caption="Inventário de ativos"
@@ -190,13 +228,13 @@ export function AtivosView() {
       <Modal
         open={open}
         onClose={fechar}
-        title="Adicionar Ativo"
-        description="Cadastre um novo item de configuração no CMDB."
+        title={editando ? 'Editar Ativo' : 'Adicionar Ativo'}
+        description={editando ? editando.codigo : 'Cadastre um novo item de configuração no CMDB.'}
         size="lg"
         footer={
           <>
             <Button variant="outline" onClick={fechar}>Cancelar</Button>
-            <Button type="submit" form="form-ativo" disabled={!valid} loading={create.isPending}>
+            <Button type="submit" form="form-ativo" disabled={!valid} loading={create.isPending || update.isPending}>
               Salvar Ativo
             </Button>
           </>

@@ -229,6 +229,16 @@ export interface ApiArtigoKb {
   meu_voto?: boolean | null;
   autor?: ApiRef | null;
   categoria?: ApiRef | null;
+  imagens?: ApiAnexoArtigo[];
+  pdfs?: ApiAnexoArtigo[];
+}
+
+export interface ApiAnexoArtigo {
+  id: number;
+  nome_arquivo: string;
+  tipo_mime: string;
+  tamanho_bytes: number;
+  data_upload: string;
 }
 
 export interface ApiCategoriaKb {

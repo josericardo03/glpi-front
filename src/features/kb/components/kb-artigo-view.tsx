@@ -8,6 +8,7 @@ import { formatDate, formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useKbArtigo, useKbArtigos, useKbFeedback, useRegistrarVisualizacao } from '../use-kb';
+import { AnexosArtigo } from './anexos-artigo';
 import { ConteudoArtigo } from './conteudo-artigo';
 import { STATUS_ARTIGO } from './kb-status';
 
@@ -90,6 +91,7 @@ export function KbArtigoView({ id }: { id: number }) {
             </div>
             <h1 className="mt-4 text-3xl font-bold leading-tight text-brand-darker md:text-4xl">{a.titulo}</h1>
             <ConteudoArtigo markdown={a.conteudoMarkdown} className="mt-6 border-t border-brand-border pt-2" />
+            <AnexosArtigo artigoId={a.id} imagens={a.imagens} pdfs={a.pdfs} podeEditar={podeEditar} />
 
             {publicado && (
               <div className="mt-10 border-t border-brand-border pt-6 text-center">

@@ -45,7 +45,8 @@ export function AprovacoesView() {
   const [decisao, setDecisao] = useState<{ item: Aprovacao; tipo: DecisaoInput['decisao'] } | null>(null);
   const [justificativa, setJustificativa] = useState('');
   const [solicitarOpen, setSolicitarOpen] = useState(false);
-  const podeDecidir = useAuth().hasRole('GESTOR');
+  const { user, hasRole } = useAuth();
+  const podeDecidir = hasRole('GESTOR');
 
   function fechar() {
     setDecisao(null);
@@ -79,7 +80,7 @@ export function AprovacoesView() {
         title={podeDecidir ? 'Central de Aprovações' : 'Minhas Solicitações de Aprovação'}
         description={
           podeDecidir
-            ? 'Aprovação de requisições e mudanças pelo gestor ou CAB (Change Advisory Board).'
+            ? 'Só o aprovador designado em cada solicitação pode decidir. Se a mudança ainda estiver em rascunho, avaliação ou aprovação, aprová-la agenda a mudança e rejeitá-la cancela. Se a mudança já tiver avançado, só a solicitação é registrada.'
             : 'Acompanhe os pedidos que você enviou e o resultado das decisões. Você também é avisado nas notificações.'
         }
         actions={
@@ -192,7 +193,7 @@ export function AprovacoesView() {
                   <Badge tone={STATUS_META[a.status].tone} dot>
                     {STATUS_META[a.status].label}
                   </Badge>
-                ) : podeDecidir ? (
+                ) : a.aprovadorId === user?.id ? (
                   <div className="flex gap-2">
                     <Button variant="danger-outline" icon={<X className="h-4 w-4" />} onClick={() => setDecisao({ item: a, tipo: 'REJEITADA' })} aria-label={`Rejeitar solicitação ${a.id}`}>
                       Rejeitar
@@ -229,6 +230,11 @@ export function AprovacoesView() {
           </>
         }
       >
+        {decisao?.item.origem === 'MUDANCA' && (
+          <p className="mb-4 text-sm text-brand-muted">
+            Se a mudança ainda estiver em rascunho, avaliação ou aprovação, ela passa para {decisao.tipo === 'APROVADA' ? 'Agendada' : 'Cancelada'}. Se já tiver avançado, só esta solicitação é registrada.
+          </p>
+        )}
         <Field
           label="Justificativa"
           required={rejeitando}

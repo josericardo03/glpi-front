@@ -22,6 +22,6 @@ export const SLA_SOLUCAO_MIN: Record<Prioridade, number> = {
 /** A API recusa (400) categorias de outro tipo; só `AMBOS` ou o mesmo tipo do chamado são aceitas. */
 export const categoriaAceitaTipo = (aplicacao: AplicacaoCategoria, tipo: TipoChamado) => aplicacao === 'AMBOS' || aplicacao === tipo;
 
-/** Política ativa que a API aplicará na abertura; sem ela a criação responde 422. */
+/** Política da mesma prioridade e tipo, usada só para estimar o prazo na tela. A abertura exige qualquer política ativa. */
 export const politicaAplicavel = (politicas: PoliticaSla[], prioridade: Prioridade, tipo: TipoChamado) =>
   politicas.find((p) => p.ativa && p.prioridade === prioridade && (p.tipoAlvo === 'AMBOS' || p.tipoAlvo === tipo));

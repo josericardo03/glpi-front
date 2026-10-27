@@ -69,6 +69,11 @@ export function AtribuirModal({ open, modo, quantidade, statusPermitidos = [], l
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
+          {modo === 'tecnico' && (
+            <Button variant="ghost" onClick={() => onConfirm({ tecnicoId: null })} loading={loading}>
+              Tirar técnico
+            </Button>
+          )}
           <Button onClick={confirm} disabled={!valido} loading={loading}>
             Confirmar
           </Button>

@@ -5,8 +5,10 @@ import { USE_MOCKS } from './http';
  * somente leitura os controles correspondentes; no modo mock tudo fica habilitado.
  */
 export const recursos = {
-  /** Atribuição de técnico/grupo a um chamado. */
-  atribuicaoChamado: USE_MOCKS,
+  /** Atribuição de técnico a um chamado (`PATCH /chamados/:id`). */
+  atribuicaoTecnico: true,
+  /** Atribuição de grupo. A API ainda não expõe essa rota. */
+  atribuicaoGrupo: USE_MOCKS,
   /** Listagem de membros das equipes de suporte. */
   membrosGrupo: USE_MOCKS,
   /** Ações automáticas das políticas de SLA (notificar gestor, alerta preventivo). */

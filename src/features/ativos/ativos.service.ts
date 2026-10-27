@@ -134,6 +134,39 @@ export const ativosService = {
       },
     ),
 
+  update: (id: number, antes: Ativo, input: AtivoInput) =>
+    request<unknown>(
+      async () => {
+        const codigo = input.codigo.trim().toUpperCase();
+        const nome = input.nome.trim();
+        const body: Record<string, unknown> = {};
+        if (codigo !== antes.codigo) body.codigo_patrimonio = codigo;
+        if (nome !== antes.nome) body.nome = nome;
+        if (TIPO_PARA_API[input.tipo] !== TIPO_PARA_API[antes.tipo]) body.tipo_ativo = TIPO_PARA_API[input.tipo];
+        if (STATUS_PARA_API[input.status] !== STATUS_PARA_API[antes.status]) body.status = STATUS_PARA_API[input.status];
+        if (input.responsavelId !== antes.responsavelId) body.id_usuario_atribuido = input.responsavelId;
+        const dia = input.dataAquisicao || null;
+        const diaAntes = antes.dataAquisicao?.slice(0, 10) ?? null;
+        if (dia !== diaAntes) body.data_aquisicao = dia ? dataParaIso(dia) : null;
+        if (Object.keys(body).length) await data(api.patch(`/ativos/${id}`, body));
+      },
+      () => {
+        const a = find(id);
+        const codigo = input.codigo.trim().toUpperCase();
+        if (db.ativos.some((x) => x.id !== id && x.codigo === codigo)) throw new Error('Código de patrimônio já cadastrado (HTTP 409).');
+        Object.assign(a, {
+          codigo,
+          nome: input.nome.trim(),
+          tipo: input.tipo,
+          status: input.status,
+          responsavelId: input.responsavelId,
+          responsavelNome: db.usuarios.find((u) => u.id === input.responsavelId)?.nome ?? null,
+          dataAquisicao: input.dataAquisicao ? dataParaIso(input.dataAquisicao) : null,
+        });
+        return toResumo(a);
+      },
+    ),
+
   addEspecificacao: (id: number, body: Omit<Especificacao, 'id'>) =>
     request<Especificacao>(
       () => Promise.reject(semEndpoint('O cadastro de especificações')),

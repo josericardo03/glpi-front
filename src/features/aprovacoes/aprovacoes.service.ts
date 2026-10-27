@@ -33,6 +33,7 @@ async function listaReal(filtro: FiltroStatusAprovacao): Promise<Aprovacao[]> {
         chamadoId: a.id_chamado,
         mudancaId: a.id_mudanca,
         solicitanteNome: a.solicitante?.nome ?? `Usuário #${a.id_solicitante}`,
+        aprovadorId: a.id_aprovador,
         aprovadorNome: a.aprovador?.nome ?? `Usuário #${a.id_aprovador}`,
         prioridade: prioridadeDe(a),
         risco: null,
@@ -85,6 +86,7 @@ export const aprovacoesService = {
           chamadoId: input.chamadoId ?? null,
           mudancaId: input.mudancaId ?? null,
           solicitanteNome: db.usuarios[0]!.nome,
+          aprovadorId: aprovador.id,
           aprovadorNome: aprovador.nome,
           prioridade: chamado?.prioridade ?? 'MEDIA',
           risco: null,
@@ -115,7 +117,9 @@ export const aprovacoesService = {
         if (input.decisao === 'REJEITADA' && !input.justificativa) throw new Error('A justificativa é obrigatória na rejeição (HTTP 400).');
         Object.assign(a, { status: input.decisao, decididoEm: new Date().toISOString(), justificativaAprovador: input.justificativa ?? null });
         const mudanca = db.mudancas.find((m) => m.id === a.mudancaId);
-        if (mudanca) mudanca.status = input.decisao === 'APROVADA' ? 'AGENDADA' : 'CANCELADA';
+        if (mudanca && (mudanca.status === 'RASCUNHO' || mudanca.status === 'AVALIACAO' || mudanca.status === 'APROVACAO')) {
+          mudanca.status = input.decisao === 'APROVADA' ? 'AGENDADA' : 'CANCELADA';
+        }
         return a;
       },
     ),

@@ -29,8 +29,8 @@ import { getErrorMessage } from '@/lib/api';
 import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import { textoInvalido } from '@/lib/validation';
-import type { GrupoInput, MembroGrupo } from '@/types';
-import { useAddMembro, useCreateGrupo, useGrupos, useTecnicos } from '../use-cadastros';
+import type { AtivoInativo, GrupoInput, GrupoSuporte, MembroGrupo } from '@/types';
+import { useAddMembro, useCreateGrupo, useGrupos, useTecnicos, useUpdateGrupo } from '../use-cadastros';
 
 const membroColumns: Column<MembroGrupo>[] = [
   { key: 'tec', header: 'Técnico', cell: (m) => <UserCell name={m.nome} subtitle={m.email} src={m.avatarUrl} /> },
@@ -54,6 +54,8 @@ export function GruposView() {
   const { data, isLoading, isError, error, refetch } = useGrupos();
   const { data: tecnicos, isLoading: loadingTecnicos } = useTecnicos();
   const createGrupo = useCreateGrupo();
+  const updateGrupo = useUpdateGrupo();
+  const [editando, setEditando] = useState<GrupoSuporte | null>(null);
   const addMembro = useAddMembro();
   const [selId, setSelId] = useState<number | null>(null);
   const [grupoOpen, setGrupoOpen] = useState(false);
@@ -75,7 +77,14 @@ export function GruposView() {
 
   function fecharGrupo() {
     setGrupoOpen(false);
+    setEditando(null);
     setGrupoForm(GRUPO_VAZIO);
+  }
+
+  function abrirGrupo(g?: GrupoSuporte) {
+    setEditando(g ?? null);
+    setGrupoForm(g ? { nome: g.nome, descricao: g.descricao, status: g.status } : GRUPO_VAZIO);
+    setGrupoOpen(true);
   }
 
   function fecharMembro() {
@@ -86,15 +95,17 @@ export function GruposView() {
   function onCreateGrupo(e: FormEvent) {
     e.preventDefault();
     if (textoInvalido(grupoForm.nome)) return;
-    createGrupo.mutate(
-      { ...grupoForm, nome: grupoForm.nome.trim(), descricao: grupoForm.descricao.trim() },
-      {
-        onSuccess: (g) => {
-          fecharGrupo();
-          setSelId(g.id);
-        },
+    const input = { ...grupoForm, nome: grupoForm.nome.trim(), descricao: grupoForm.descricao.trim() };
+    if (editando) {
+      updateGrupo.mutate({ id: editando.id, antes: editando, input }, { onSuccess: fecharGrupo });
+      return;
+    }
+    createGrupo.mutate(input, {
+      onSuccess: (g) => {
+        fecharGrupo();
+        setSelId(g.id);
       },
-    );
+    });
   }
 
   function onAddMembro(e: FormEvent) {
@@ -111,7 +122,7 @@ export function GruposView() {
         title="Gestão de Grupos"
         description="Equipes técnicas responsáveis pelo atendimento."
         actions={
-          <Button size="lg" icon={<UsersRound className="h-4 w-4" />} onClick={() => setGrupoOpen(true)}>
+          <Button size="lg" icon={<UsersRound className="h-4 w-4" />} onClick={() => abrirGrupo()}>
             Criar Novo Grupo
           </Button>
         }
@@ -132,7 +143,7 @@ export function GruposView() {
         <EmptyState
           title="Nenhum grupo cadastrado"
           description="Crie a primeira equipe técnica para organizar o atendimento."
-          action={<Button onClick={() => setGrupoOpen(true)}>Criar Novo Grupo</Button>}
+          action={<Button onClick={() => abrirGrupo()}>Criar Novo Grupo</Button>}
         />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
@@ -178,6 +189,9 @@ export function GruposView() {
                 <div className="flex flex-wrap items-center gap-3">
                   <h2 className="text-xl font-bold text-brand-darker">{sel.nome}</h2>
                   <Badge tone={sel.status === 'ATIVO' ? 'success' : 'neutral'}>{sel.status === 'ATIVO' ? 'Ativo' : 'Inativo'}</Badge>
+                  <Button variant="outline" size="sm" className="ml-auto" onClick={() => abrirGrupo(sel)}>
+                    Editar
+                  </Button>
                 </div>
                 {sel.descricao && <p className="mt-2 text-sm text-brand-muted">{sel.descricao}</p>}
               </CardBody>
@@ -207,12 +221,12 @@ export function GruposView() {
       <Modal
         open={grupoOpen}
         onClose={fecharGrupo}
-        title="Criar Novo Grupo"
+        title={editando ? 'Editar Grupo' : 'Criar Novo Grupo'}
         footer={
           <>
             <Button variant="outline" onClick={fecharGrupo}>Cancelar</Button>
-            <Button type="submit" form="form-grupo" disabled={!!textoInvalido(grupoForm.nome)} loading={createGrupo.isPending}>
-              Criar
+            <Button type="submit" form="form-grupo" disabled={!!textoInvalido(grupoForm.nome)} loading={createGrupo.isPending || updateGrupo.isPending}>
+              {editando ? 'Salvar' : 'Criar'}
             </Button>
           </>
         }
@@ -221,9 +235,24 @@ export function GruposView() {
           <Field label="Nome" required error={erroNome}>
             {(id) => <Input id={id} maxLength={100} value={grupoForm.nome} onChange={(e) => setGrupoForm({ ...grupoForm, nome: e.target.value })} />}
           </Field>
-          <Field label="Descrição">
+          <Field label="Descrição" hint={editando ? 'Em branco, a descrição é removida.' : undefined}>
             {(id) => <Textarea id={id} value={grupoForm.descricao} onChange={(e) => setGrupoForm({ ...grupoForm, descricao: e.target.value })} />}
           </Field>
+          {editando && (
+            <Field label="Status">
+              {(id) => (
+                <Select
+                  id={id}
+                  options={[
+                    { value: 'ATIVO', label: 'Ativo' },
+                    { value: 'INATIVO', label: 'Inativo' },
+                  ]}
+                  value={grupoForm.status}
+                  onChange={(e) => setGrupoForm({ ...grupoForm, status: e.target.value as AtivoInativo })}
+                />
+              )}
+            </Field>
+          )}
         </form>
       </Modal>
 

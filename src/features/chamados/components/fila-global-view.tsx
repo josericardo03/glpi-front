@@ -151,7 +151,15 @@ export function FilaGlobalView() {
           {(id) => <Select id={id} placeholder="Todas" options={categorias} value={filters.categoriaId} onChange={(e) => setFilter('categoriaId', e.target.value ? Number(e.target.value) : '')} />}
         </Field>
         <Field label="Técnico">
-          {(id) => <Select id={id} placeholder="Todos os Técnicos" options={tecnicos} value={filters.tecnicoId} onChange={(e) => setFilter('tecnicoId', e.target.value ? Number(e.target.value) : '')} />}
+          {(id) => (
+            <Select
+              id={id}
+              placeholder="Todos os Técnicos"
+              options={[{ value: 'sem', label: 'Sem técnico' }, ...tecnicos]}
+              value={filters.tecnicoId}
+              onChange={(e) => setFilter('tecnicoId', e.target.value === 'sem' ? 'sem' : e.target.value ? Number(e.target.value) : '')}
+            />
+          )}
         </Field>
       </FilterBar>
 

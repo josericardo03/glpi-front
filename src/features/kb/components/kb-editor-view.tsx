@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 import { FolderPlus, Save } from 'lucide-react';
 import { Button, Callout, Card, CardBody, CardHeader, ErrorState, Field, Input, PageHeader, PageLoader, Select } from '@/components/ui';
@@ -9,7 +10,8 @@ import type { KbArtigo, StatusArtigoKb } from '@/types';
 import { contarPalavras } from '../documento';
 import { altDeArquivo, caminhoImagem } from '../imagem';
 import { kbService } from '../kb.service';
-import { useAtualizarArtigoKb, useCriarArtigoKb, useKbArtigo, useKbCategorias } from '../use-kb';
+import { kbKeys, useAtualizarArtigoKb, useCriarArtigoKb, useKbArtigo, useKbCategorias } from '../use-kb';
+import { AnexosArtigo } from './anexos-artigo';
 import { KbCategoriaModal } from './kb-categoria-modal';
 import { RichEditor } from './rich-editor';
 import { STATUS_ARTIGO } from './kb-status';
@@ -30,6 +32,7 @@ export function KbEditorView({ id }: { id?: number }) {
 
 function EditorForm({ artigo }: { artigo?: KbArtigo }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: categorias, isLoading: carregandoCategorias } = useKbCategorias();
   const [titulo, setTitulo] = useState(artigo?.titulo ?? '');
   const [conteudo, setConteudo] = useState(artigo?.conteudoMarkdown ?? '');
@@ -101,6 +104,7 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
       status: artigo?.status ?? 'RASCUNHO',
     });
     if (!artigo) router.replace(`/kb/artigos/${id}/editar`);
+    else void queryClient.invalidateQueries({ queryKey: kbKeys.artigo(id) });
   }
 
   function validar(): Erros {
@@ -163,6 +167,7 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
                 {palavras} {palavras === 1 ? 'palavra' : 'palavras'} · cerca de {Math.max(1, Math.round(palavras / 200))} min de leitura
               </p>
             </div>
+            {artigo && <AnexosArtigo artigoId={artigo.id} imagens={artigo.imagens} pdfs={artigo.pdfs} podeEditar />}
           </CardBody>
         </Card>
 

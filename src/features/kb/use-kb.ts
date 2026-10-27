@@ -68,6 +68,20 @@ export const useAtualizarArtigoKb = (id: number, onSuccess?: (r: { id: number; p
     onSuccess,
   });
 
+export const useEnviarAnexoArtigo = () =>
+  useApiMutation({
+    mutationFn: ({ id, file }: { id: number; file: File }) => kbService.enviarAnexo(id, file),
+    invalidate: [kbKeys.all],
+    successMessage: 'Arquivo anexado.',
+  });
+
+export const useRemoverAnexoArtigo = () =>
+  useApiMutation({
+    mutationFn: ({ artigoId, anexoId }: { artigoId: number; anexoId: number }) => kbService.removerAnexo(artigoId, anexoId),
+    invalidate: [kbKeys.all],
+    successMessage: 'Arquivo removido.',
+  });
+
 export const useKbFeedback = (id: number) =>
   useApiMutation({
     mutationFn: (util: boolean) => kbService.feedback(id, util),

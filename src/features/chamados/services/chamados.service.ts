@@ -139,8 +139,8 @@ export const chamadosService = {
         const cat = db.categorias.find((c) => c.id === input.categoriaId);
         if (!cat) throw new Error('Categoria não encontrada (HTTP 404).');
         if (!categoriaAceitaTipo(cat.aplicacao, input.tipo)) throw new Error('A categoria não se aplica a este tipo de chamado (HTTP 400).');
-        const politica = politicaAplicavel(db.politicasSla, prioridade, input.tipo);
-        if (!politica) throw new Error('Não há política de SLA ativa para esta prioridade e tipo de chamado (HTTP 422).');
+        const politica = politicaAplicavel(db.politicasSla, prioridade, input.tipo) ?? db.politicasSla.find((p) => p.ativa);
+        if (!politica) throw new Error('Não há política de SLA ativa neste cliente (HTTP 422).');
         const sla = politica.tempoSolucaoMin;
         const pai = db.categorias.find((c) => c.id === cat.categoriaPaiId);
         const solicitante = db.usuarios.find((u) => u.id === input.solicitanteId)!;
@@ -203,7 +203,10 @@ export const chamadosService = {
   atualizarStatus: (id: number, input: AtualizarStatusInput) =>
     request<unknown>(
       async () => {
-        if (input.grupoId !== undefined || input.tecnicoId !== undefined) throw semEndpoint('A atribuição de técnico/grupo');
+        if (input.grupoId !== undefined) throw semEndpoint('A atribuição de grupo');
+        if (input.tecnicoId !== undefined) {
+          await data(api.patch(`/chamados/${id}`, { id_tecnico_atribuido: input.tecnicoId }));
+        }
         if (!input.status) return null;
         return data(
           api.patch(`/chamados/${id}/status`, {

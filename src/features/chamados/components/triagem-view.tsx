@@ -85,11 +85,11 @@ export function TriagemView() {
           <Menu
             label={`Ações do chamado #${c.id}`}
             items={[
-              ...(recursos.atribuicaoChamado
-                ? [
-                    { label: 'Atribuir a mim', icon: <UserPlus className="h-4 w-4" />, onClick: () => user && atribuir({ id: c.id, input: { tecnicoId: user.id } }) },
-                    { label: 'Atribuir para grupo', icon: <UsersRound className="h-4 w-4" />, onClick: () => abrir('grupo', [c.id]) },
-                  ]
+              ...(recursos.atribuicaoTecnico
+                ? [{ label: 'Atribuir a mim', icon: <UserPlus className="h-4 w-4" />, onClick: () => user && atribuir({ id: c.id, input: { tecnicoId: user.id } }) }]
+                : []),
+              ...(recursos.atribuicaoGrupo
+                ? [{ label: 'Atribuir para grupo', icon: <UsersRound className="h-4 w-4" />, onClick: () => abrir('grupo', [c.id]) }]
                 : []),
               { label: 'Mudar status', icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => abrir('status', [c.id]) },
               { label: 'Ver detalhes', icon: <Eye className="h-4 w-4" />, onClick: () => router.push(`/chamados/${c.id}`) },
@@ -119,15 +119,15 @@ export function TriagemView() {
         breadcrumbs={[{ label: 'Chamados', href: '/chamados' }, { label: 'Fila de Triagem' }]}
         actions={
           <>
-            {recursos.atribuicaoChamado && (
-              <>
-                <Button variant="outline" icon={<UsersRound className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('grupo', ids)}>
-                  Atribuir para Grupo
-                </Button>
-                <Button variant="outline" icon={<UserPlus className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('tecnico', ids)}>
-                  Atribuir para Técnico
-                </Button>
-              </>
+            {recursos.atribuicaoGrupo && (
+              <Button variant="outline" icon={<UsersRound className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('grupo', ids)}>
+                Atribuir para Grupo
+              </Button>
+            )}
+            {recursos.atribuicaoTecnico && (
+              <Button variant="outline" icon={<UserPlus className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('tecnico', ids)}>
+                Atribuir para Técnico
+              </Button>
             )}
             <Button variant="dark" icon={<ArrowLeftRight className="h-4 w-4" />} disabled={!ids.length} onClick={() => abrir('status', ids)}>
               Mudar Status{ids.length ? ` (${ids.length})` : ''}
@@ -154,11 +154,6 @@ export function TriagemView() {
         </Field>
       </FilterBar>
 
-      {!recursos.atribuicaoChamado && (
-        <Callout tone="info" className="mb-4">
-          A atribuição de técnico e grupo ainda não está disponível na API. Por aqui é possível iniciar o atendimento ou pendenciar os chamados.
-        </Callout>
-      )}
 
       {isError ? (
         <ErrorState message={getErrorMessage(error)} onRetry={refetch} />

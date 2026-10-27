@@ -26,7 +26,7 @@ import { matches } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import { textoInvalido } from '@/lib/validation';
 import type { AplicacaoCategoria, Categoria, CategoriaInput } from '@/types';
-import { useCategorias, useCreateCategoria } from '../use-cadastros';
+import { useCategorias, useCreateCategoria, useUpdateCategoria } from '../use-cadastros';
 
 const APLICACAO: Record<AplicacaoCategoria, { label: string; tone: BadgeTone }> = {
   AMBOS: { label: 'Ambos', tone: 'neutral' },
@@ -53,7 +53,7 @@ function buildTree(list: Categoria[]): Node[] {
   return roots;
 }
 
-function TreeRow({ node, expanded, toggle }: { node: Node; expanded: Set<number>; toggle: (id: number) => void }) {
+function TreeRow({ node, expanded, toggle, onEdit }: { node: Node; expanded: Set<number>; toggle: (id: number) => void; onEdit: (c: Categoria) => void }) {
   const open = expanded.has(node.id);
   const inativo = node.status === 'INATIVO';
   const hasChildren = node.children.length > 0;
@@ -87,8 +87,13 @@ function TreeRow({ node, expanded, toggle }: { node: Node; expanded: Set<number>
             {inativo ? 'Inativo' : 'Ativo'}
           </span>
         </td>
+        <td className="px-4 py-3 text-right">
+          <Button variant="ghost" size="sm" onClick={() => onEdit(node)}>
+            Editar
+          </Button>
+        </td>
       </tr>
-      {open && node.children.map((c) => <TreeRow key={c.id} node={c} expanded={expanded} toggle={toggle} />)}
+      {open && node.children.map((c) => <TreeRow key={c.id} node={c} expanded={expanded} toggle={toggle} onEdit={onEdit} />)}
     </>
   );
 }
@@ -98,6 +103,8 @@ const EMPTY: CategoriaInput = { nome: '', categoriaPaiId: null, aplicacao: 'INCI
 export function CategoriasView() {
   const { data, isLoading, isError, error, refetch } = useCategorias();
   const create = useCreateCategoria();
+  const update = useUpdateCategoria();
+  const [editando, setEditando] = useState<Categoria | null>(null);
   const [term, setTerm] = useState('');
   const [tipo, setTipo] = useState<AplicacaoCategoria | ''>('');
   /** `null` = estado inicial com todos os níveis expandidos. */
@@ -140,31 +147,41 @@ export function CategoriasView() {
       return n;
     });
   const paiOptions = (data ?? [])
-    .filter((c) => (nivelDe.get(c.id) ?? 1) < MAX_NIVEL && c.status === 'ATIVO')
+    .filter((c) => c.id !== editando?.id && (nivelDe.get(c.id) ?? 1) < MAX_NIVEL && (c.status === 'ATIVO' || c.id === form.categoriaPaiId))
     .map((c) => ({ value: c.id, label: c.nome }))
     .sort((a, b) => a.label.localeCompare(b.label));
   const valido = !textoInvalido(form.nome) && (inc || req);
 
   function limpar() {
+    setEditando(null);
     setForm(EMPTY);
     setInc(true);
     setReq(false);
   }
 
+  function editar(c: Categoria) {
+    setEditando(c);
+    setForm({ nome: c.nome, categoriaPaiId: c.categoriaPaiId, aplicacao: c.aplicacao, status: c.status });
+    setInc(c.aplicacao === 'INCIDENTE' || c.aplicacao === 'AMBOS');
+    setReq(c.aplicacao === 'REQUISICAO' || c.aplicacao === 'AMBOS');
+  }
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!valido) return;
+    if (!valido || (editando && form.categoriaPaiId === editando.id)) return;
     const aplicacao: AplicacaoCategoria = inc && req ? 'AMBOS' : req ? 'REQUISICAO' : 'INCIDENTE';
     const paiId = form.categoriaPaiId;
-    create.mutate(
-      { ...form, nome: form.nome.trim(), aplicacao },
-      {
-        onSuccess: () => {
-          if (paiId) setExpanded((s) => new Set(s ?? todosIds).add(paiId));
-          limpar();
-        },
+    const input = { ...form, nome: form.nome.trim(), aplicacao };
+    if (editando) {
+      update.mutate({ id: editando.id, antes: editando, input }, { onSuccess: limpar });
+      return;
+    }
+    create.mutate(input, {
+      onSuccess: () => {
+        if (paiId) setExpanded((s) => new Set(s ?? todosIds).add(paiId));
+        limpar();
       },
-    );
+    });
   }
 
   const count = (a: AplicacaoCategoria) => data?.filter((c) => c.aplicacao === a || c.aplicacao === 'AMBOS').length ?? 0;
@@ -199,25 +216,26 @@ export function CategoriasView() {
                   <th scope="col" className="px-4 py-3">Estrutura de Categorias</th>
                   <th scope="col" className="px-4 py-3">Tipo</th>
                   <th scope="col" className="px-4 py-3">Status</th>
+                  <th scope="col" className="px-4 py-3"><span className="sr-only">Ações</span></th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading && (
                   <tr>
-                    <td colSpan={3} className="p-4">
+                    <td colSpan={4} className="p-4">
                       <Skeleton className="h-32" />
                     </td>
                   </tr>
                 )}
                 {!isLoading && !tree.length && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-10 text-center text-sm text-brand-muted" role="status">
+                    <td colSpan={4} className="px-4 py-10 text-center text-sm text-brand-muted" role="status">
                       {term || tipo ? 'Nenhuma categoria corresponde ao filtro.' : 'Nenhuma categoria cadastrada.'}
                     </td>
                   </tr>
                 )}
                 {tree.map((n) => (
-                  <TreeRow key={n.id} node={n} expanded={abertos} toggle={toggle} />
+                  <TreeRow key={n.id} node={n} expanded={abertos} toggle={toggle} onEdit={editar} />
                 ))}
               </tbody>
             </table>
@@ -226,7 +244,7 @@ export function CategoriasView() {
 
         <aside className="space-y-4">
           <Card>
-            <CardHeader title="Configurar Nova Categoria" icon={<FolderPlus className="h-4 w-4" />} />
+            <CardHeader title={editando ? 'Editar Categoria' : 'Configurar Nova Categoria'} icon={<FolderPlus className="h-4 w-4" />} />
             <CardBody>
               <form onSubmit={onSubmit} noValidate className="space-y-4">
                 <Field label="Nome da Categoria" required error={erroNome}>
@@ -246,8 +264,9 @@ export function CategoriasView() {
                 <div className="rounded-md bg-slate-50 p-3">
                   <Switch label="Status Ativo" description="Visível para usuários" checked={form.status === 'ATIVO'} onChange={(v) => setForm({ ...form, status: v ? 'ATIVO' : 'INATIVO' })} />
                 </div>
-                <Button type="submit" className="w-full" icon={<PlusCircle className="h-4 w-4" />} disabled={!valido} loading={create.isPending}>
-                  Salvar Categoria
+                {editando && form.categoriaPaiId === editando.id && <p className="text-xs text-status-critica">Uma categoria não pode ser pai dela mesma.</p>}
+                <Button type="submit" className="w-full" icon={<PlusCircle className="h-4 w-4" />} disabled={!valido || (!!editando && form.categoriaPaiId === editando.id)} loading={create.isPending || update.isPending}>
+                  {editando ? 'Salvar alterações' : 'Salvar Categoria'}
                 </Button>
                 <Button variant="ghost" className="w-full" onClick={limpar}>
                   Limpar
