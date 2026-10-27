@@ -1,5 +1,6 @@
 services:
   web:
+    image: ghcr.io/josericardo03/glpi-front:latest
     build:
       context: .
       args:
