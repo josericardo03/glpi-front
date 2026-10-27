@@ -4,8 +4,16 @@ export const TOKEN_KEY = 'itsm_token';
 /** Disparado quando a API responde 401 numa rota autenticada; o AuthProvider encerra a sessão. */
 export const SESSION_EXPIRED_EVENT = 'itsm:session-expired';
 
+/** No servidor, sem URL fixa, o navegador chama /api no mesmo endereço do site. */
+function apiBaseUrl() {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured) return configured;
+  if (typeof window !== 'undefined') return `${window.location.origin}/api`;
+  return 'http://127.0.0.1:3000/api';
+}
+
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000/api',
+  baseURL: apiBaseUrl(),
   headers: { 'Content-Type': 'application/json' },
   timeout: 20_000,
 });

@@ -10,8 +10,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN mkdir -p public
 
-# NEXT_PUBLIC_* entra no JavaScript no build. Trocar a URL da API exige rebuild.
-ARG NEXT_PUBLIC_API_URL=http://127.0.0.1:3000/api
+# Vazio: o navegador usa o mesmo endereço do site + /api. Um endereço fixo exige rebuild.
+ARG NEXT_PUBLIC_API_URL=
 ARG NEXT_PUBLIC_USE_MOCKS=false
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_USE_MOCKS=$NEXT_PUBLIC_USE_MOCKS

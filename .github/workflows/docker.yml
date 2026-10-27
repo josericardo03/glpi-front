@@ -40,7 +40,7 @@ jobs:
             ${{ steps.nome.outputs.imagem }}:latest
             ${{ steps.nome.outputs.imagem }}:${{ github.sha }}
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000/api' }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_USE_MOCKS=${{ vars.NEXT_PUBLIC_USE_MOCKS || 'false' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -50,17 +50,34 @@ jobs:
     if: github.event_name == 'push' && vars.DEPLOY_HOST != ''
     runs-on: ubuntu-latest
     steps:
-      - name: Atualizar o container no servidor
+      - name: Atualizar front, API, banco e Nginx
         uses: appleboy/ssh-action@v1
         env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_ADMIN_EMAIL: ${{ vars.SEED_ADMIN_EMAIL }}
+          JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN }}
         with:
           host: ${{ vars.DEPLOY_HOST }}
           username: ${{ vars.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: GHCR_TOKEN
+          envs: GHCR_TOKEN,GITHUB_TOKEN,POSTGRES_PASSWORD,JWT_SECRET,SEED_ADMIN_PASSWORD,SEED_ADMIN_EMAIL,JWT_EXPIRES_IN
           script: |
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            set -e
             cd "${{ vars.DEPLOY_PATH || '/opt/glpi-front' }}"
+            umask 077
+            cat > .env << EOF
+            POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+            JWT_SECRET=$JWT_SECRET
+            JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-8h}
+            SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-admin@itsm.local}
+            SEED_ADMIN_PASSWORD=$SEED_ADMIN_PASSWORD
+            EOF
+            TOKEN="$GHCR_TOKEN"
+            if [ -z "$TOKEN" ]; then TOKEN="$GITHUB_TOKEN"; fi
+            echo "$TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
             docker compose up -d
