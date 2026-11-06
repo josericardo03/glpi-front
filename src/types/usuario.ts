@@ -32,6 +32,8 @@ export interface UsuarioInput {
 export interface LoginInput {
   email: string;
   senha: string;
+  /** Só necessário quando o mesmo e-mail existe em mais de um cliente. */
+  idCliente?: number;
 }
 
 export interface AuthResponse {

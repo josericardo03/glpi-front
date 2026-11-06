@@ -71,8 +71,6 @@ function filtrarMock(f: ChamadoFiltros) {
     .sort((a, b) => b.abertoEm.localeCompare(a.abertoEm));
 }
 
-const semEndpoint = (recurso: string) => new Error(`${recurso} ainda não está disponível na API.`);
-
 async function paginaReal(url: '/chamados' | '/triagem', f: ChamadoFiltros, teto: number): Promise<Paginated<Chamado>> {
   if (semResultado(f)) return paginaVazia(f);
   const p = await getPagina<ApiChamado>(url, paramsChamados(f), f.page ?? 1, Math.min(f.pageSize ?? 10, teto));
@@ -203,9 +201,13 @@ export const chamadosService = {
   atualizarStatus: (id: number, input: AtualizarStatusInput) =>
     request<unknown>(
       async () => {
-        if (input.grupoId !== undefined) throw semEndpoint('A atribuição de grupo');
-        if (input.tecnicoId !== undefined) {
-          await data(api.patch(`/chamados/${id}`, { id_tecnico_atribuido: input.tecnicoId }));
+        if (input.grupoId !== undefined || input.tecnicoId !== undefined) {
+          await data(
+            api.patch(`/chamados/${id}`, {
+              ...(input.tecnicoId !== undefined && { id_tecnico_atribuido: input.tecnicoId }),
+              ...(input.grupoId !== undefined && { id_grupo_responsavel: input.grupoId }),
+            }),
+          );
         }
         if (!input.status) return null;
         return data(

@@ -20,6 +20,7 @@ import {
   Paperclip,
   PauseCircle,
   PlayCircle,
+  RotateCcw,
   Server,
   ShieldAlert,
   UserRound,
@@ -69,6 +70,7 @@ export function ChamadoWorkspace({ id }: { id: number }) {
   const [resolverOpen, setResolverOpen] = useState(false);
   const [resolucao, setResolucao] = useState('');
   const [reatribuir, setReatribuir] = useState(false);
+  const [reatribuirGrupo, setReatribuirGrupo] = useState(false);
   const [aprovacaoOpen, setAprovacaoOpen] = useState(false);
   const [vincularOpen, setVincularOpen] = useState(false);
   const [problemaOpen, setProblemaOpen] = useState(false);
@@ -107,6 +109,8 @@ export function ChamadoWorkspace({ id }: { id: number }) {
   const finalizado = isFinalizado(c.status);
   const dono = user?.id === c.solicitanteId;
   const podeAvaliar = dono && (c.status === 'RESOLVIDO' || c.status === 'CONCLUIDO');
+  /** O dono confirma a solução (conclui) ou reabre o chamado resolvido. */
+  const podeEncerrar = dono && c.status === 'RESOLVIDO';
   const pausado = c.status === 'PENDENTE';
   const itens = c.itensConfiguracao ?? [];
   const temSla = c.slaRestanteMin !== null && c.slaTotalMin !== null;
@@ -205,6 +209,20 @@ export function ChamadoWorkspace({ id }: { id: number }) {
         </Card>
 
         <aside className="space-y-6">
+          {podeEncerrar && (
+            <Card className="border-emerald-200">
+              <CardHeader title="A solução resolveu o problema?" description="Confirme para concluir o chamado ou reabra se o problema continua." />
+              <CardBody className="space-y-2">
+                <Button className="w-full" icon={<CheckCircle2 className="h-4 w-4" />} loading={atualizar.isPending} onClick={() => atualizar.mutate({ id, input: { status: 'CONCLUIDO' } })}>
+                  Confirmar conclusão
+                </Button>
+                <Button variant="outline" className="w-full" icon={<RotateCcw className="h-4 w-4" />} disabled={atualizar.isPending} onClick={() => atualizar.mutate({ id, input: { status: 'EM_ATENDIMENTO' } })}>
+                  Reabrir chamado
+                </Button>
+              </CardBody>
+            </Card>
+          )}
+
           {(podeAvaliar || c.csat.avaliado) && <CsatCard chamadoId={id} csat={c.csat} podeAvaliar={podeAvaliar} />}
 
           {tecnico && (
@@ -266,6 +284,11 @@ export function ChamadoWorkspace({ id }: { id: number }) {
                   <Server className="h-4 w-4 text-brand-muted" />
                   {c.grupoNome ?? 'Não definido'}
                 </div>
+                {tecnico && recursos.atribuicaoGrupo && (
+                  <Button variant="ghost" size="sm" className="mt-2 w-full uppercase tracking-wide" icon={<ArrowLeftRight className="h-4 w-4" />} onClick={() => setReatribuirGrupo(true)}>
+                    Encaminhar a outro grupo
+                  </Button>
+                )}
               </div>
               <div>
                 <Label>Técnico Atribuído</Label>
@@ -394,6 +417,14 @@ export function ChamadoWorkspace({ id }: { id: number }) {
         loading={atualizar.isPending}
         onClose={() => setReatribuir(false)}
         onConfirm={(input) => atualizar.mutate({ id, input }, { onSuccess: () => setReatribuir(false) })}
+      />
+      <AtribuirModal
+        open={reatribuirGrupo}
+        modo="grupo"
+        quantidade={1}
+        loading={atualizar.isPending}
+        onClose={() => setReatribuirGrupo(false)}
+        onConfirm={(input) => atualizar.mutate({ id, input }, { onSuccess: () => setReatribuirGrupo(false) })}
       />
     </>
   );

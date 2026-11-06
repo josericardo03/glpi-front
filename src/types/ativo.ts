@@ -54,6 +54,9 @@ export interface Manutencao {
   responsavel: string;
 }
 
+/** Dados enviados ao registrar: o responsável é o técnico logado, definido pela API. */
+export type ManutencaoInput = Omit<Manutencao, 'id' | 'responsavel'>;
+
 export interface Dependencia {
   id: ID;
   codigo: string;

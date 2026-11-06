@@ -7,14 +7,14 @@ import { USE_MOCKS } from './http';
 export const recursos = {
   /** Atribuição de técnico a um chamado (`PATCH /chamados/:id`). */
   atribuicaoTecnico: true,
-  /** Atribuição de grupo. A API ainda não expõe essa rota. */
-  atribuicaoGrupo: USE_MOCKS,
-  /** Listagem de membros das equipes de suporte. */
-  membrosGrupo: USE_MOCKS,
+  /** Atribuição de grupo (`PATCH /chamados/:id` com `id_grupo_responsavel`). */
+  atribuicaoGrupo: true,
+  /** Listagem de membros das equipes de suporte (`GET /grupos-suporte/membros`). */
+  membrosGrupo: true,
   /** Ações automáticas das políticas de SLA (notificar gestor, alerta preventivo). */
   alertasSla: USE_MOCKS,
-  /** Especificações técnicas e manutenções de ativos. */
-  detalhesAtivo: USE_MOCKS,
+  /** Especificações, dependências, manutenções e chamados do ativo (`GET /ativos/:id`). */
+  detalhesAtivo: true,
   /** Fuso horário, cor de destaque e upload de logotipo no branding. */
   brandingAvancado: USE_MOCKS,
   /** Pesquisa de satisfação (CSAT) e taxa de reabertura: `/pesquisas-csat` e `/relatorios/tma` já entregam os dados. */

@@ -1,5 +1,5 @@
 import { api } from '@/lib/api';
-import { byId, invalidateLookups, lookups } from '@/lib/backend/lookups';
+import { byId, invalidateLookups, lookups, perfilAtualAtinge } from '@/lib/backend/lookups';
 import { perfilPrincipal, PERFIL_RANK, toUsuario } from '@/lib/backend/usuario.mapper';
 import type { ApiUsuario } from '@/lib/backend/types';
 import { data, matches, request } from '@/lib/http';
@@ -263,18 +263,50 @@ export const categoriasService = {
     ),
 };
 
-/** A API não expõe GET de membros; a lista de membros só existe no modo mock. */
+interface ApiMembroGrupo {
+  id: number;
+  id_grupo: number;
+  id_usuario: number;
+  cargo_especialidade: string | null;
+  carga_trabalho_pct: number;
+  usuario: { id: number; nome: string; email: string; cargo: string; avatar_url: string | null };
+}
+
+/** Os membros só são consultados por GESTOR ou superior; os demais perfis usam a lista de grupos para filtros. */
+async function membrosPorGrupo(): Promise<Map<number, MembroGrupo[]>> {
+  const porGrupo = new Map<number, MembroGrupo[]>();
+  if (!perfilAtualAtinge('GESTOR')) return porGrupo;
+  const rows = await data(api.get<ApiMembroGrupo[]>('/grupos-suporte/membros')).catch(() => [] as ApiMembroGrupo[]);
+  for (const m of rows) {
+    const lista = porGrupo.get(m.id_grupo) ?? [];
+    lista.push({
+      id: m.id,
+      grupoId: m.id_grupo,
+      usuarioId: m.id_usuario,
+      nome: m.usuario.nome,
+      email: m.usuario.email,
+      cargo: m.cargo_especialidade || m.usuario.cargo,
+      cargaTrabalho: m.carga_trabalho_pct,
+      avatarUrl: m.usuario.avatar_url,
+    });
+    porGrupo.set(m.id_grupo, lista);
+  }
+  return porGrupo;
+}
+
 export const gruposService = {
   list: () =>
     request<GrupoSuporte[]>(
-      async () =>
-        (await lookups.grupos()).map((g) => ({
+      async () => {
+        const [grupos, membros] = await Promise.all([lookups.grupos(), membrosPorGrupo()]);
+        return grupos.map((g) => ({
           id: g.id,
           nome: g.nome,
           descricao: g.descricao ?? '',
           status: g.status as AtivoInativo,
-          membros: [],
-        })),
+          membros: membros.get(g.id) ?? [],
+        }));
+      },
       () => db.grupos,
     ),
 

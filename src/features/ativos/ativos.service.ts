@@ -3,7 +3,7 @@ import type { ApiAtivo } from '@/lib/backend/types';
 import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
-import type { Ativo, AtivoDetalhe, AtivoFiltros, AtivoInput, AtivosResumo, Especificacao, Manutencao, StatusAtivo, TipoAtivo } from '@/types';
+import type { Ativo, AtivoDetalhe, AtivoFiltros, AtivoInput, AtivosResumo, Dependencia, Especificacao, Manutencao, ManutencaoInput, StatusAtivo, StatusChamado, TipoAtivo } from '@/types';
 
 const toResumo = ({ especificacoes: _e, manutencoes: _m, dependencias: _d, chamadosVinculados: _c, ...a }: AtivoDetalhe): Ativo => a;
 const find = (id: number) => {
@@ -53,6 +53,47 @@ function toAtivo(a: ApiAtivo): Ativo {
   };
 }
 
+interface ApiAtivoDetalhe extends ApiAtivo {
+  especificacoes: { id: number; chave: string; valor: string }[];
+  manutencoes: { id: number; descricao_servico: string; custo_manutencao: number; data_inicio: string; tecnico: { nome: string } }[];
+  dependencias: { id: number; nome: string; tipo_ativo: string; codigo_patrimonio: string; relacao: Dependencia['relacao'] }[];
+  chamados: { id: number; titulo: string; status: string }[];
+}
+
+/** A tabela de manutenções não tem coluna de tipo: ele vai como prefixo "[Corretiva]" na descrição. */
+const ROTULO_MANUTENCAO: Record<Manutencao['tipo'], string> = { PREVENTIVA: 'Preventiva', CORRETIVA: 'Corretiva' };
+const PREFIXO_MANUTENCAO = /^\[(Preventiva|Corretiva)\]\s*/i;
+
+const descricaoParaApi = (tipo: Manutencao['tipo'], descricao: string) => `[${ROTULO_MANUTENCAO[tipo]}] ${descricao}`;
+
+function manutencaoDaApi(m: ApiAtivoDetalhe['manutencoes'][number]): Manutencao {
+  const tipo = PREFIXO_MANUTENCAO.exec(m.descricao_servico)?.[1]?.toUpperCase() === 'CORRETIVA' ? 'CORRETIVA' : 'PREVENTIVA';
+  return {
+    id: m.id,
+    descricao: m.descricao_servico.replace(PREFIXO_MANUTENCAO, ''),
+    tipo,
+    custo: Number(m.custo_manutencao),
+    realizadaEm: m.data_inicio,
+    responsavel: m.tecnico.nome,
+  };
+}
+
+function toDetalhe(a: ApiAtivoDetalhe): AtivoDetalhe {
+  return {
+    ...toAtivo(a),
+    especificacoes: a.especificacoes.map((e) => ({ id: e.id, chave: e.chave, valor: e.valor })),
+    manutencoes: a.manutencoes.map(manutencaoDaApi),
+    dependencias: a.dependencias.map((d) => ({
+      id: d.id,
+      codigo: d.codigo_patrimonio,
+      nome: d.nome,
+      tipo: TIPO_DA_API[d.tipo_ativo] ?? 'OUTRO',
+      relacao: d.relacao,
+    })),
+    chamadosVinculados: a.chamados.map((c) => ({ id: c.id, titulo: c.titulo, status: c.status as StatusChamado })),
+  };
+}
+
 const fetchAtivos = async () => (await getAll<ApiAtivo>('/ativos', TETO_PAGINA.ativos)).map(toAtivo);
 
 export function resumirAtivos(todos: Ativo[]): AtivosResumo {
@@ -76,20 +117,13 @@ export function filtrarAtivos(todos: Ativo[], f: Omit<AtivoFiltros, 'page' | 'pa
   );
 }
 
-const semEndpoint = (recurso: string) => new Error(`${recurso} ainda não está disponível na API.`);
-
 export const ativosService = {
   /** Inventário completo; filtros, resumo e paginação são calculados na tela. */
   list: () => request<Ativo[]>(fetchAtivos, () => db.ativos.map(toResumo)),
 
-  /** A API não possui GET /ativos/:id; o detalhe é montado a partir da listagem. */
   get: (id: number) =>
     request<AtivoDetalhe>(
-      async () => {
-        const a = (await fetchAtivos()).find((x) => x.id === id);
-        if (!a) throw new Error('Ativo não encontrado.');
-        return { ...a, especificacoes: [], manutencoes: [], dependencias: [], chamadosVinculados: [] };
-      },
+      async () => toDetalhe(await data(api.get<ApiAtivoDetalhe>(`/ativos/${id}`))),
       () => find(id),
     ),
 
@@ -169,7 +203,7 @@ export const ativosService = {
 
   addEspecificacao: (id: number, body: Omit<Especificacao, 'id'>) =>
     request<Especificacao>(
-      () => Promise.reject(semEndpoint('O cadastro de especificações')),
+      () => data(api.post<Especificacao>(`/ativos/${id}/especificacoes`, { chave: body.chave, valor: body.valor })),
       () => {
         const e = { id: uid(), ...body };
         find(id).especificacoes.push(e);
@@ -177,11 +211,18 @@ export const ativosService = {
       },
     ),
 
-  addManutencao: (id: number, body: Omit<Manutencao, 'id'>) =>
-    request<Manutencao>(
-      () => Promise.reject(semEndpoint('O registro de manutenções')),
+  addManutencao: (id: number, body: ManutencaoInput) =>
+    request<unknown>(
+      () =>
+        data(
+          api.post(`/ativos/${id}/manutencoes`, {
+            descricao_servico: descricaoParaApi(body.tipo, body.descricao),
+            custo_manutencao: Math.round(body.custo * 100) / 100,
+            data_inicio: body.realizadaEm,
+          }),
+        ),
       () => {
-        const m = { id: uid(), ...body };
+        const m = { id: uid(), ...body, responsavel: 'Você' };
         find(id).manutencoes.unshift(m);
         return m;
       },

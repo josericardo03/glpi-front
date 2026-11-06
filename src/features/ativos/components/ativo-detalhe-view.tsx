@@ -24,7 +24,7 @@ import { formatDate } from '@/lib/format';
 import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import { textoInvalido } from '@/lib/validation';
-import type { AtivoDetalhe, Dependencia, Manutencao } from '@/types';
+import type { AtivoDetalhe, Dependencia, Manutencao, ManutencaoInput } from '@/types';
 import { StatusBadge } from '@/features/chamados/components/chamado-badges';
 import { useAddEspecificacao, useAddManutencao, useAtivo } from '../use-ativos';
 import { AtivoIcon, StatusAtivoBadge, TIPO_ATIVO } from './ativo-meta';
@@ -75,7 +75,7 @@ function DependencyGraph({ ativo }: { ativo: AtivoDetalhe }) {
 }
 
 const hoje = () => new Date().toLocaleDateString('en-CA');
-const novaManutencao = (): Omit<Manutencao, 'id'> => ({ descricao: '', tipo: 'PREVENTIVA', custo: 0, realizadaEm: hoje(), responsavel: '' });
+const novaManutencao = (): ManutencaoInput => ({ descricao: '', tipo: 'PREVENTIVA', custo: 0, realizadaEm: hoje() });
 
 export function AtivoDetalheView({ id }: { id: number }) {
   const { data: a, isLoading, isError, error, refetch } = useAtivo(id);
@@ -91,7 +91,7 @@ export function AtivoDetalheView({ id }: { id: number }) {
 
   const detalhado = recursos.detalhesAtivo;
   const custoValido = Number.isFinite(manut.custo) && manut.custo >= 0;
-  const manutValida = !textoInvalido(manut.descricao, { min: 3, max: 255 }) && !textoInvalido(manut.responsavel) && custoValido && !!manut.realizadaEm && manut.realizadaEm <= hoje();
+  const manutValida = !textoInvalido(manut.descricao, { min: 3, max: 255 }) && custoValido && !!manut.realizadaEm && manut.realizadaEm <= hoje();
 
   function onSpec(e: FormEvent) {
     e.preventDefault();
@@ -116,7 +116,7 @@ export function AtivoDetalheView({ id }: { id: number }) {
     e.preventDefault();
     if (!manutValida) return;
     addManut.mutate(
-      { ...manut, descricao: manut.descricao.trim(), responsavel: manut.responsavel.trim(), realizadaEm: `${manut.realizadaEm}T12:00:00.000Z` },
+      { ...manut, descricao: manut.descricao.trim(), realizadaEm: `${manut.realizadaEm}T12:00:00.000Z` },
       { onSuccess: fecharManutencao },
     );
   }
@@ -298,9 +298,7 @@ export function AtivoDetalheView({ id }: { id: number }) {
           <Field label="Data" required>
             {(fid) => <Input id={fid} type="date" max={hoje()} value={manut.realizadaEm} onChange={(e) => setManut({ ...manut, realizadaEm: e.target.value })} />}
           </Field>
-          <Field label="Responsável" required>
-            {(fid) => <Input id={fid} maxLength={100} value={manut.responsavel} onChange={(e) => setManut({ ...manut, responsavel: e.target.value })} />}
-          </Field>
+          <p className="text-xs text-brand-muted sm:col-span-2">A manutenção é registrada em seu nome.</p>
         </form>
       </Modal>
     </>

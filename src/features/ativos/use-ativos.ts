@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import type { Ativo, AtivoInput, Especificacao, Manutencao } from '@/types';
+import type { Ativo, AtivoInput, Especificacao, ManutencaoInput } from '@/types';
 import { ativosService } from './ativos.service';
 
 export const ativosKeys = {
@@ -35,7 +35,7 @@ export const useAddEspecificacao = (id: number) =>
 
 export const useAddManutencao = (id: number) =>
   useApiMutation({
-    mutationFn: (b: Omit<Manutencao, 'id'>) => ativosService.addManutencao(id, b),
+    mutationFn: (b: ManutencaoInput) => ativosService.addManutencao(id, b),
     invalidate: [ativosKeys.detail(id)],
     successMessage: 'Manutenção registrada.',
   });

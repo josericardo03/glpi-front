@@ -15,12 +15,12 @@ export const MOTIVO_PAUSA_LABEL: Record<MotivoPausa, string> = {
   MANUTENCAO_PROGRAMADA: 'Manutenção programada',
 };
 
-/** Máquina de estados do backend (`assertTransicao`). */
+/** Máquina de estados do backend (`assertTransicao`). RESOLVIDO → EM_ATENDIMENTO é a reabertura. */
 export const TRANSICOES: Record<StatusChamado, StatusChamado[]> = {
   NOVO: ['EM_ATENDIMENTO', 'PENDENTE'],
   EM_ATENDIMENTO: ['PENDENTE', 'RESOLVIDO'],
   PENDENTE: ['EM_ATENDIMENTO'],
-  RESOLVIDO: ['CONCLUIDO'],
+  RESOLVIDO: ['CONCLUIDO', 'EM_ATENDIMENTO'],
   CONCLUIDO: [],
 };
 

@@ -228,7 +228,7 @@ export const kbService = {
   visualizar: (id: number) =>
     request<void>(
       async () => {
-        await api.post(`/kb/artigos/${id}/visualizar`);
+        await api.post(`/artigos-kb/${id}/visualizar`);
       },
       () => {
         const a = db.kbArtigos.find((x) => x.id === id);
