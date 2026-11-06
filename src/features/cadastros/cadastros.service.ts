@@ -105,7 +105,8 @@ export const usuariosService = {
             ...(input.cargo !== undefined && { cargo: input.cargo.trim() }),
             ...(input.papeis && { perfil: perfilPrincipal(input.papeis) }),
             ...(input.status && { status: input.status }),
-            ...(input.departamentoId && { id_departamento: input.departamentoId }),
+            // `null` remove o departamento ("Nenhum"); `undefined` não altera.
+            ...(input.departamentoId !== undefined && { id_departamento: input.departamentoId }),
             ...(input.senha && { password: input.senha }),
           }),
         );

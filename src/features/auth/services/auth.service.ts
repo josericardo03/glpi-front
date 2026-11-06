@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { api } from '@/lib/api';
-import { byId, lookups } from '@/lib/backend/lookups';
+import { byId, currentTenantId, lookups } from '@/lib/backend/lookups';
 import { authUserToUsuario, toUsuario } from '@/lib/backend/usuario.mapper';
 import type { ApiAuthUser, ApiCliente, ApiLoginResponse } from '@/lib/backend/types';
 import { data, request } from '@/lib/http';
@@ -38,12 +38,16 @@ export const authService = {
       () => db.usuarios[0]!,
     ),
 
-  /** Não há endpoint de troca de senha: valida a senha atual tentando autenticar com ela. */
+  /**
+   * Não há endpoint de troca de senha: valida a senha atual tentando autenticar com ela.
+   * Envia o `id_cliente`: sem ele, um e-mail presente em mais de um tenant é rejeitado como ambíguo
+   * e a senha correta apareceria como "senha atual incorreta".
+   */
   verificarSenha: (email: string, senha: string) =>
     request<boolean>(
       async () => {
         try {
-          await api.post('/auth/login', { email, password: senha });
+          await api.post('/auth/login', { email, password: senha, id_cliente: currentTenantId() });
           return true;
         } catch (err) {
           if (axios.isAxiosError(err) && err.response?.status === 401) return false;

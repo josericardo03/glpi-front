@@ -76,7 +76,8 @@ const rotuloStatus = (s: string | null) => (s ? (STATUS_LABEL[s as StatusChamado
 
 /** Linha do tempo: abertura, trocas de status (com o motivo quando é pausa) e retomadas. */
 function montarHistorico(c: ApiChamadoDetalhe, ctx: ChamadoCtx, solicitante: string): HistoricoEvento[] {
-  const nome = (id: number | null) => (id ? (ctx.usuarios.get(id)?.nome ?? `Usuário #${id}`) : 'Sistema');
+  const nome = (id: number | null, embutido?: { nome: string } | null) =>
+    id ? (embutido?.nome ?? ctx.usuarios.get(id)?.nome ?? `Usuário #${id}`) : 'Sistema';
   const motivoPorOrigem = new Map(c.pausas_sla.map((p) => [p.id_historico_origem, p.motivo_pausa]));
   const eventos: HistoricoEvento[] = [{ id: 0, descricao: 'Chamado aberto', autor: solicitante, criadoEm: c.data_abertura }];
   c.historico_status_chamados.forEach((h) => {
@@ -84,7 +85,7 @@ function montarHistorico(c: ApiChamadoDetalhe, ctx: ChamadoCtx, solicitante: str
     let descricao = `Status alterado: ${rotuloStatus(h.status_anterior)} → ${rotuloStatus(h.status_novo)}`;
     if (motivo) descricao += ` (${MOTIVO_PAUSA_LABEL[motivo as MotivoPausa] ?? motivo})`;
     if (h.status_novo === 'RESOLVIDO' && c.resolucao) descricao += `. Resolução: ${c.resolucao}`;
-    eventos.push({ id: h.id, descricao, autor: nome(h.id_usuario_alterou), criadoEm: h.data_alteracao });
+    eventos.push({ id: h.id, descricao, autor: nome(h.id_usuario_alterou, h.usuario), criadoEm: h.data_alteracao });
   });
   c.pausas_sla
     .filter((p) => p.data_retomada)
@@ -105,7 +106,7 @@ export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): Chamado
       : { avaliado: false },
     comentarios: c.comentarios_chamados
       .map((cm) => {
-        const autor = ctx.usuarios.get(cm.id_autor);
+        const autor = cm.autor ?? ctx.usuarios.get(cm.id_autor);
         return {
           id: cm.id,
           chamadoId: cm.id_chamado,
@@ -130,7 +131,7 @@ export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): Chamado
     worklogs: c.worklogs.map((w) => ({
       id: w.id,
       chamadoId: w.id_chamado,
-      tecnicoNome: ctx.usuarios.get(w.id_tecnico)?.nome ?? `Usuário #${w.id_tecnico}`,
+      tecnicoNome: w.tecnico?.nome ?? ctx.usuarios.get(w.id_tecnico)?.nome ?? `Usuário #${w.id_tecnico}`,
       descricao: w.descricao_atividade,
       minutos: w.tempo_trabalhado_min,
       realizadoEm: w.data_execucao,

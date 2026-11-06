@@ -149,6 +149,8 @@ export interface ApiComentario {
   mensagem: string;
   tipo_visibilidade: 'PUBLICO' | 'INTERNO';
   data_criacao: string;
+  /** O detalhe do chamado já traz o autor: o solicitante não tem a lista completa de usuários. */
+  autor?: (ApiRef & { perfil: PerfilApi }) | null;
 }
 
 export interface ApiAnexo {
@@ -182,6 +184,7 @@ export interface ApiChamadoDetalhe extends ApiChamado {
     tempo_trabalhado_min: number;
     data_execucao: string;
     data_registro: string;
+    tecnico?: ApiRef | null;
   }[];
   pausas_sla: {
     id: number;
@@ -198,6 +201,7 @@ export interface ApiChamadoDetalhe extends ApiChamado {
     status_novo: string;
     id_usuario_alterou: number | null;
     data_alteracao: string;
+    usuario?: ApiRef | null;
   }[];
 }
 

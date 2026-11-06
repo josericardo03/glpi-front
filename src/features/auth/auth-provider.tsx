@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { SESSION_EXPIRED_EVENT, TOKEN_KEY } from '@/lib/api';
+import { httpStatus, SESSION_EXPIRED_EVENT, TOKEN_KEY } from '@/lib/api';
 import { PERFIL_RANK, perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import type { LoginInput, Papel, Usuario } from '@/types';
 import { authService } from './services/auth.service';
@@ -51,9 +51,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(u);
         setStatus('authenticated');
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
-        localStorage.removeItem(TOKEN_KEY);
+        // Só descarta o token quando a API o recusa. Falha de rede ou 5xx não deve deslogar o usuário.
+        if (httpStatus(err) === 401 || httpStatus(err) === 403) localStorage.removeItem(TOKEN_KEY);
         setStatus('unauthenticated');
       });
     return () => {

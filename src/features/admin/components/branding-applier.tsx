@@ -26,13 +26,20 @@ export function brandingVars(b: Paleta): Record<string, string> {
   );
 }
 
-/** Aplica a paleta do tenant (GET /api/branding) globalmente. */
+const VARIAVEIS = ['--brand-primary', '--brand-primary-hover', '--brand-darker', '--brand-dark', '--brand-accent', '--brand-bg'];
+
+/**
+ * Aplica a paleta do tenant (GET /api/branding) globalmente. As variáveis são removidas ao sair
+ * (logout, troca de usuário/tenant) para que a paleta anterior não vaze para a tela de login nem
+ * para o próximo tenant, e também quando uma cor deixa de ser válida.
+ */
 export function BrandingApplier() {
   const { data } = useBranding();
   useEffect(() => {
     if (!data) return;
     const root = document.documentElement.style;
     Object.entries(brandingVars(data)).forEach(([k, v]) => root.setProperty(k, v));
+    return () => VARIAVEIS.forEach((nome) => root.removeProperty(nome));
   }, [data]);
   return null;
 }

@@ -53,7 +53,9 @@ function validar(form: UsuarioInput, novo: boolean) {
 }
 
 export function UsuariosView() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, hasRole } = useAuth();
+  /** A API só aceita criar e editar usuários para o perfil ADMIN; o gestor apenas consulta a lista. */
+  const podeGerir = hasRole('ADMIN');
   const { filters, setFilter, reset } = useFilters(INITIAL);
   const search = useDebounce(filters.search);
   const { page = 1, pageSize = 10, ...criterios } = filters;
@@ -112,18 +114,23 @@ export function UsuariosView() {
         },
       },
       { key: 'status', header: 'Status', cell: (u) => <Badge tone={STATUS_USUARIO[u.status].tone} dot>{STATUS_USUARIO[u.status].label}</Badge> },
-      {
-        key: 'acoes',
-        header: <span className="sr-only">Ações</span>,
-        align: 'right',
-        cell: (u) => (
-          <Button variant="ghost" size="icon" onClick={() => openForm(u)} aria-label={`Editar ${u.nome}`}>
-            <Pencil className="h-4 w-4" />
-          </Button>
-        ),
-      },
+      ...(podeGerir
+        ? [
+            {
+              key: 'acoes',
+              header: <span className="sr-only">Ações</span>,
+              align: 'right' as const,
+              cell: (u: Usuario) => (
+                <Button variant="ghost" size="icon" onClick={() => openForm(u)} aria-label={`Editar ${u.nome}`}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              ),
+            },
+          ]
+        : []),
     ],
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `openForm` só usa setters de estado (estáveis)
+    [podeGerir],
   );
 
   const lista = todos ?? [];
@@ -134,11 +141,13 @@ export function UsuariosView() {
     <>
       <PageHeader
         title="Gestão de Usuários"
-        description="Cadastro de usuários, departamentos e perfis de acesso."
+        description={podeGerir ? 'Cadastro de usuários, departamentos e perfis de acesso.' : 'Consulta de usuários, departamentos e perfis de acesso.'}
         actions={
-          <Button size="lg" icon={<UserPlus className="h-4 w-4" />} onClick={() => openForm('new')}>
-            Adicionar Usuário
-          </Button>
+          podeGerir ? (
+            <Button size="lg" icon={<UserPlus className="h-4 w-4" />} onClick={() => openForm('new')}>
+              Adicionar Usuário
+            </Button>
+          ) : undefined
         }
       />
 

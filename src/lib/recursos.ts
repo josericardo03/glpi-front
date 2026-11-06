@@ -17,8 +17,8 @@ export const recursos = {
   detalhesAtivo: USE_MOCKS,
   /** Fuso horário, cor de destaque e upload de logotipo no branding. */
   brandingAvancado: USE_MOCKS,
-  /** Pesquisa de satisfação (CSAT) e taxa de reabertura. */
-  satisfacao: USE_MOCKS,
+  /** Pesquisa de satisfação (CSAT) e taxa de reabertura: `/pesquisas-csat` e `/relatorios/tma` já entregam os dados. */
+  satisfacao: true,
   /** Edição do próprio perfil por usuários não administradores. */
   autoatendimentoPerfil: USE_MOCKS,
 } as const;
