@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link2, Network, Plus, Unlink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
@@ -8,8 +8,11 @@ import { EmptyState, ErrorState, PageLoader } from '@/components/ui/feedback';
 import { Field, Input, Select } from '@/components/ui/form';
 import { PageHeader } from '@/components/ui/page-header';
 import { formatDateTime } from '@/lib/format';
+import { MapaBarra } from './mapa-barra';
 import { MapaGrafo } from './mapa-grafo';
-import { useCadastrarSoftware, useDesligar, useImpacto, useLigacoes, useLigar, useSoftwares } from '../use-mapa';
+import { useCadastrarSoftware, useDesligar, useImpacto, useLigacoes, useLigar, useMapas, useSoftwares } from '../use-mapa';
+
+const CHAVE_MAPA = 'itsm:mapa-aberto';
 
 function sugerirCodigo(nome: string) {
   const base = nome
@@ -24,7 +27,12 @@ function sugerirCodigo(nome: string) {
 
 export function MapaSoftwareView() {
   const softwares = useSoftwares();
-  const ligacoes = useLigacoes();
+  const mapas = useMapas();
+  const [mapaId, setMapaId] = useState<number | null>(null);
+  const listaMapas = mapas.data ?? [];
+  // O mapa lembrado pode ter sido apagado: cai no primeiro que existir.
+  const mapaAtual = listaMapas.find((m) => m.id === mapaId) ?? listaMapas[0] ?? null;
+  const ligacoes = useLigacoes(mapaAtual?.id ?? null);
   const cadastrar = useCadastrarSoftware();
   const ligar = useLigar();
   const desligar = useDesligar();
@@ -36,10 +44,19 @@ export function MapaSoftwareView() {
   const [destino, setDestino] = useState('');
   const [caidoId, setCaidoId] = useState<number | null>(null);
 
-  const impacto = useImpacto(caidoId);
+  const impacto = useImpacto(caidoId, mapaAtual?.id ?? null);
   const lista = softwares.data ?? [];
   const opcoes = lista.map((s) => ({ value: s.id, label: s.nome }));
-  const arestas = ligacoes.data ?? [];
+  const arestas = useMemo(() => ligacoes.data ?? [], [ligacoes.data]);
+  // Só os softwares que aparecem neste mapa podem ser marcados como "caiu".
+  const opcoesDoMapa = useMemo(() => {
+    const vistos = new Map<number, string>();
+    for (const a of arestas) {
+      vistos.set(a.origem.id, a.origem.nome);
+      vistos.set(a.destino.id, a.destino.nome);
+    }
+    return [...vistos.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+  }, [arestas]);
   const porNivel = useMemo(() => {
     const grupos = new Map<number, { id: number; nome: string }[]>();
     for (const a of impacto.data?.afetados ?? []) {
@@ -50,8 +67,27 @@ export function MapaSoftwareView() {
     return [...grupos.entries()].sort((a, b) => a[0] - b[0]);
   }, [impacto.data]);
 
-  const carregando = softwares.isLoading || ligacoes.isLoading;
-  const erro = softwares.error ?? ligacoes.error;
+  const carregando = softwares.isLoading || mapas.isLoading || (mapaAtual != null && ligacoes.isLoading);
+  const erro = softwares.error ?? mapas.error ?? ligacoes.error;
+
+  useEffect(() => {
+    try {
+      const salvo = Number(window.localStorage.getItem(CHAVE_MAPA));
+      if (salvo > 0) setMapaId(salvo);
+    } catch {
+      /* sem armazenamento: abre o primeiro mapa */
+    }
+  }, []);
+
+  function escolherMapa(id: number) {
+    setMapaId(id);
+    setCaidoId(null);
+    try {
+      window.localStorage.setItem(CHAVE_MAPA, String(id));
+    } catch {
+      /* preferência opcional */
+    }
+  }
 
   function aoMudarNome(valor: string) {
     setNome(valor);
@@ -77,23 +113,25 @@ export function MapaSoftwareView() {
 
   function aoLigar(e: FormEvent) {
     e.preventDefault();
-    if (!origem || !destino) return;
-    ligar.mutate({ origem: Number(origem), destino: Number(destino) }, { onSuccess: () => { setOrigem(''); setDestino(''); } });
+    if (!origem || !destino || !mapaAtual) return;
+    ligar.mutate({ origem: Number(origem), destino: Number(destino), idMapa: mapaAtual.id }, { onSuccess: () => { setOrigem(''); setDestino(''); } });
   }
 
   return (
     <div>
       <PageHeader
         title="Mapa de software"
-        description="A origem depende do destino. A seta sai de quem usa e aponta para o que sustenta. Quando o destino cai, quem depende dele aparece como afetado."
+        description="Cada mapa guarda as dependências de um sistema ou área. A origem depende do destino: a seta sai de quem usa e aponta para o que sustenta. Quando o destino cai, quem depende dele aparece como afetado."
         breadcrumbs={[{ label: 'Operação' }, { label: 'Mapa de software' }]}
       />
 
       {carregando ? (
         <PageLoader />
       ) : erro ? (
-        <ErrorState message="Não foi possível carregar o mapa." onRetry={() => { void softwares.refetch(); void ligacoes.refetch(); }} />
+        <ErrorState message="Não foi possível carregar o mapa." onRetry={() => { void softwares.refetch(); void mapas.refetch(); void ligacoes.refetch(); }} />
       ) : (
+        <>
+        <MapaBarra mapas={listaMapas} atual={mapaAtual} onEscolher={escolherMapa} />
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
             <div className="grid gap-4 lg:grid-cols-2">
@@ -127,7 +165,7 @@ export function MapaSoftwareView() {
               </Card>
 
               <Card>
-                <CardHeader title="Ligar dois softwares" description="Quem depende fica na origem." icon={<Link2 className="h-4 w-4" />} />
+                <CardHeader title="Ligar dois softwares" description={mapaAtual ? `Entra no mapa "${mapaAtual.nome}". Quem depende fica na origem.` : 'Crie um mapa para ligar softwares.'} icon={<Link2 className="h-4 w-4" />} />
                 <CardBody>
                   <form className="space-y-3" onSubmit={aoLigar}>
                     <Field label="Origem — quem depende">
@@ -136,7 +174,7 @@ export function MapaSoftwareView() {
                     <Field label="Destino — do que depende">
                       {(id) => <Select id={id} options={opcoes} placeholder="Selecione" value={destino} onChange={(e) => setDestino(e.target.value)} />}
                     </Field>
-                    <Button type="submit" disabled={ligar.isPending || !origem || !destino || lista.length < 1}>
+                    <Button type="submit" disabled={ligar.isPending || !origem || !destino || lista.length < 1 || !mapaAtual}>
                       {ligar.isPending ? 'Ligando…' : 'Ligar'}
                     </Button>
                   </form>
@@ -146,15 +184,21 @@ export function MapaSoftwareView() {
 
             <Card>
               <CardHeader
-                title="Mapa"
+                title={mapaAtual ? mapaAtual.nome : 'Mapa'}
                 description="Clique em um software para ver quem cai junto."
                 icon={<Network className="h-4 w-4" />}
               />
               <CardBody>
-                {arestas.length === 0 ? (
+                {!mapaAtual ? (
                   <EmptyState
                     icon={<Network className="h-6 w-6" />}
-                    title="Nenhuma dependência"
+                    title="Nenhum mapa criado"
+                    description="Use “Novo mapa” para criar o primeiro, por exemplo um para cada sistema ou área."
+                  />
+                ) : arestas.length === 0 ? (
+                  <EmptyState
+                    icon={<Network className="h-6 w-6" />}
+                    title="Nenhuma dependência neste mapa"
                     description="Ligue dois softwares para desenhar a seta da origem até o destino."
                   />
                 ) : (
@@ -202,8 +246,8 @@ export function MapaSoftwareView() {
                 {(id) => (
                   <Select
                     id={id}
-                    options={opcoes}
-                    placeholder={lista.length ? 'Selecione' : 'Nenhum software'}
+                    options={opcoesDoMapa}
+                    placeholder={opcoesDoMapa.length ? 'Selecione' : 'Nenhum software neste mapa'}
                     value={caidoId == null ? '' : String(caidoId)}
                     onChange={(e) => setCaidoId(e.target.value ? Number(e.target.value) : null)}
                   />
@@ -239,6 +283,7 @@ export function MapaSoftwareView() {
             </CardBody>
           </Card>
         </div>
+        </>
       )}
     </div>
   );

@@ -16,7 +16,16 @@ export interface Ponta {
   tipo: string;
 }
 
+export interface Mapa {
+  id: number;
+  nome: string;
+  descricao: string | null;
+  criadoEm: string;
+  totalLigacoes: number;
+}
+
 export interface Ligacao {
+  idMapa: number;
   idOrigem: number;
   idDestino: number;
   criadaEm: string;
@@ -39,7 +48,16 @@ interface ApiPonta {
   tipo_ativo: string;
 }
 
+interface ApiMapa {
+  id: number;
+  nome: string;
+  descricao: string | null;
+  data_criacao: string;
+  total_ligacoes: number;
+}
+
 interface ApiLigacao {
+  id_mapa: number;
   id_ativo_origem: number;
   id_ativo_destino: number;
   tipo_relacionamento: string;
@@ -55,7 +73,16 @@ interface ApiImpacto {
 
 const ponta = (a: ApiPonta): Ponta => ({ id: a.id, nome: a.nome, tipo: a.tipo_ativo });
 
+const mapa = (m: ApiMapa): Mapa => ({
+  id: m.id,
+  nome: m.nome,
+  descricao: m.descricao,
+  criadoEm: m.data_criacao,
+  totalLigacoes: m.total_ligacoes,
+});
+
 const ligacao = (r: ApiLigacao): Ligacao => ({
+  idMapa: r.id_mapa,
   idOrigem: r.id_ativo_origem,
   idDestino: r.id_ativo_destino,
   criadaEm: r.data_criacao,
@@ -69,8 +96,25 @@ function falhar(err: unknown, porStatus: Record<number, string>): never {
   throw new Error(getErrorMessage(err));
 }
 
-/** Ligações só existem no modo mock; somem ao recarregar a página. */
+/** Mapas e ligações só existem no modo mock; somem ao recarregar a página. */
+const mapasMock: Omit<Mapa, 'totalLigacoes'>[] = [
+  { id: 1, nome: 'Principal', descricao: 'Mapa padrão das dependências.', criadoEm: new Date().toISOString() },
+];
 const ligacoesMock: Ligacao[] = [];
+
+function mapaMockOuErro(id: number) {
+  const m = mapasMock.find((x) => x.id === id);
+  if (!m) throw new Error('Mapa não encontrado.');
+  return m;
+}
+
+function nomeMapaLivre(nome: string, ignorarId?: number) {
+  if (mapasMock.some((m) => m.id !== ignorarId && m.nome.toLowerCase() === nome.toLowerCase())) {
+    throw new Error('Já existe um mapa com esse nome.');
+  }
+}
+
+const comTotal = (m: Omit<Mapa, 'totalLigacoes'>): Mapa => ({ ...m, totalLigacoes: ligacoesMock.filter((l) => l.idMapa === m.id).length });
 
 function softwareMock(): Software[] {
   return db.ativos.filter((a) => a.tipo === 'LICENCA').map((a) => ({ id: a.id, nome: a.nome, codigo: a.codigo }));
@@ -80,7 +124,7 @@ export const mapaService = {
   softwares: () =>
     request<Software[]>(
       async () => {
-        const rows = await getAll<ApiAtivo>('/ativos', 100);
+        const rows = await getAll<ApiAtivo>('/ativos', 100, { tipo_ativo: 'LICENCA_SOFTWARE' });
         return rows
           .filter((a) => a.tipo_ativo === 'LICENCA_SOFTWARE')
           .map((a) => ({ id: a.id, nome: a.nome, codigo: a.codigo_patrimonio }))
@@ -135,13 +179,78 @@ export const mapaService = {
       },
     ),
 
-  ligacoes: () =>
-    request<Ligacao[]>(
-      async () => (await getAll<ApiLigacao>('/ativos/relacionamentos', 100)).map(ligacao),
-      () => ligacoesMock.map((l) => ({ ...l })),
+  mapas: () =>
+    request<Mapa[]>(
+      async () => (await data<ApiMapa[]>(api.get('/mapas-software'))).map(mapa),
+      () => mapasMock.map(comTotal).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
     ),
 
-  ligar: (idOrigem: number, idDestino: number) =>
+  criarMapa: (input: { nome: string; descricao: string }) =>
+    request<Mapa>(
+      async () => {
+        try {
+          return mapa(await data<ApiMapa>(api.post('/mapas-software', { nome: input.nome.trim(), descricao: input.descricao.trim() || undefined })));
+        } catch (err) {
+          falhar(err, { 409: 'Já existe um mapa com esse nome.' });
+        }
+      },
+      () => {
+        const nome = input.nome.trim();
+        nomeMapaLivre(nome);
+        const criado = { id: Math.max(0, ...mapasMock.map((m) => m.id)) + 1, nome, descricao: input.descricao.trim() || null, criadoEm: new Date().toISOString() };
+        mapasMock.push(criado);
+        return comTotal(criado);
+      },
+    ),
+
+  atualizarMapa: (id: number, input: { nome: string; descricao: string }) =>
+    request<Mapa>(
+      async () => {
+        try {
+          return mapa(await data<ApiMapa>(api.patch(`/mapas-software/${id}`, { nome: input.nome.trim(), descricao: input.descricao.trim() })));
+        } catch (err) {
+          falhar(err, { 404: 'Esse mapa não existe mais.', 409: 'Já existe um mapa com esse nome.' });
+        }
+      },
+      () => {
+        const atual = mapaMockOuErro(id);
+        const nome = input.nome.trim();
+        nomeMapaLivre(nome, id);
+        atual.nome = nome;
+        atual.descricao = input.descricao.trim() || null;
+        return comTotal(atual);
+      },
+    ),
+
+  removerMapa: (id: number, comLigacoes: boolean) =>
+    request<{ removido: boolean; ligacoesRemovidas: number }>(
+      async () => {
+        try {
+          const r = await data<{ removido: boolean; ligacoes_removidas: number }>(
+            api.delete(`/mapas-software/${id}`, { params: comLigacoes ? { com_ligacoes: true } : undefined }),
+          );
+          return { removido: r.removido, ligacoesRemovidas: r.ligacoes_removidas };
+        } catch (err) {
+          falhar(err, { 404: 'Esse mapa não existe mais.' });
+        }
+      },
+      () => {
+        mapaMockOuErro(id);
+        const dele = ligacoesMock.filter((l) => l.idMapa === id);
+        if (dele.length && !comLigacoes) throw new Error(`O mapa ainda tem ${dele.length} dependência(s).`);
+        for (const l of dele) ligacoesMock.splice(ligacoesMock.indexOf(l), 1);
+        mapasMock.splice(mapasMock.findIndex((m) => m.id === id), 1);
+        return { removido: true, ligacoesRemovidas: dele.length };
+      },
+    ),
+
+  ligacoes: (idMapa: number) =>
+    request<Ligacao[]>(
+      async () => (await getAll<ApiLigacao>('/ativos/relacionamentos', 100, { id_mapa: idMapa })).map(ligacao),
+      () => ligacoesMock.filter((l) => l.idMapa === idMapa).map((l) => ({ ...l })),
+    ),
+
+  ligar: (idOrigem: number, idDestino: number, idMapa: number) =>
     request<Ligacao>(
       async () => {
         try {
@@ -150,6 +259,7 @@ export const mapaService = {
               api.post('/ativos/relacionamentos', {
                 id_ativo_origem: idOrigem,
                 id_ativo_destino: idDestino,
+                id_mapa: idMapa,
                 tipo_relacionamento: 'DEPENDE_DE',
               }),
             ),
@@ -157,21 +267,25 @@ export const mapaService = {
         } catch (err) {
           falhar(err, {
             400: 'Um software não pode depender dele mesmo.',
-            404: 'Um dos softwares não existe mais.',
-            409: 'Essa dependência já está cadastrada.',
+            404: 'Um dos softwares ou o mapa não existe mais.',
           });
         }
       },
       () => {
         if (idOrigem === idDestino) throw new Error('Um software não pode depender dele mesmo.');
+        mapaMockOuErro(idMapa);
         const todos = softwareMock();
         const origem = todos.find((s) => s.id === idOrigem);
         const destino = todos.find((s) => s.id === idDestino);
         if (!origem || !destino) throw new Error('Um dos softwares não existe mais.');
-        if (ligacoesMock.some((l) => l.idOrigem === idOrigem && l.idDestino === idDestino)) {
-          throw new Error('Essa dependência já está cadastrada.');
+        const repetida = ligacoesMock.find((l) => l.idOrigem === idOrigem && l.idDestino === idDestino);
+        if (repetida) {
+          throw new Error(
+            repetida.idMapa === idMapa ? 'Essa dependência já está cadastrada.' : `Essa dependência já está cadastrada no mapa "${mapaMockOuErro(repetida.idMapa).nome}".`,
+          );
         }
         const nova: Ligacao = {
+          idMapa,
           idOrigem,
           idDestino,
           criadaEm: new Date().toISOString(),
@@ -200,11 +314,11 @@ export const mapaService = {
       },
     ),
 
-  impacto: (id: number) =>
+  impacto: (id: number, idMapa: number) =>
     request<Impacto>(
       async () => {
         try {
-          const r = await data<ApiImpacto>(api.get(`/ativos/${id}/impacto`));
+          const r = await data<ApiImpacto>(api.get(`/ativos/${id}/impacto`, { params: { id_mapa: idMapa } }));
           return { ativo: ponta(r.ativo), afetados: r.afetados.map((a) => ({ ...ponta(a), nivel: a.nivel })) };
         } catch (err) {
           falhar(err, { 404: 'Esse software não existe mais.' });
@@ -220,7 +334,7 @@ export const mapaService = {
           const proxima: number[] = [];
           for (const destino of fronteira) {
             for (const l of ligacoesMock) {
-              if (l.idDestino !== destino || vistos.has(l.idOrigem)) continue;
+              if (l.idMapa !== idMapa || l.idDestino !== destino || vistos.has(l.idOrigem)) continue;
               vistos.add(l.idOrigem);
               proxima.push(l.idOrigem);
               afetados.push({ id: l.origem.id, nome: l.origem.nome, tipo: l.origem.tipo, nivel });
