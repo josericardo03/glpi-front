@@ -28,7 +28,7 @@ import { recursos } from '@/lib/recursos';
 import { semErros, senhaInvalida, textoInvalido } from '@/lib/validation';
 import type { Papel, Usuario } from '@/types';
 import { useAuth } from '../auth-provider';
-import { authService } from '../services/auth.service';
+import { SegurancaTab } from './seguranca-tab';
 
 type Aba = 'dados' | 'seguranca' | 'preferencias';
 
@@ -52,19 +52,6 @@ function loadPrefs(userId: number): Prefs {
     return DEFAULT_PREFS;
   }
 }
-
-function forcaSenha(s: string) {
-  const regras = [s.length >= 8, /[A-Z]/.test(s), /[a-z]/.test(s), /\d/.test(s), /[^A-Za-z0-9]/.test(s)];
-  return regras.filter(Boolean).length;
-}
-const FORCA = [
-  { label: 'Muito fraca', tone: 'danger' },
-  { label: 'Muito fraca', tone: 'danger' },
-  { label: 'Fraca', tone: 'danger' },
-  { label: 'Média', tone: 'warning' },
-  { label: 'Boa', tone: 'accent' },
-  { label: 'Forte', tone: 'success' },
-] as const;
 
 const AVISO_SOMENTE_LEITURA = 'A alteração de dados cadastrais é feita pelo administrador do sistema. Solicite a mudança pelo Service Desk.';
 
@@ -111,96 +98,6 @@ function DadosTab({ user, editavel }: { user: Usuario; editavel: boolean }) {
         )}
       </form>
     </Card>
-  );
-}
-
-const SENHA_VAZIA = { atual: '', nova: '', confirmar: '' };
-
-function SegurancaTab({ user, editavel }: { user: Usuario; editavel: boolean }) {
-  const update = useUpdateUsuario('Senha alterada com sucesso.');
-  const [senha, setSenha] = useState(SENHA_VAZIA);
-  const [verificando, setVerificando] = useState(false);
-  const [erroAtual, setErroAtual] = useState<string>();
-  const forca = forcaSenha(senha.nova);
-  const confere = !senha.confirmar || senha.nova === senha.confirmar;
-  const erroNova = senha.nova ? (senhaInvalida(senha.nova) ?? (senha.nova === senha.atual ? 'A nova senha deve ser diferente da atual.' : undefined)) : undefined;
-  const valido = !!senha.atual && !erroNova && forca >= 4 && senha.nova === senha.confirmar;
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!valido) return;
-    setErroAtual(undefined);
-    setVerificando(true);
-    try {
-      if (!(await authService.verificarSenha(user.email, senha.atual))) {
-        setErroAtual('Senha atual incorreta.');
-        return;
-      }
-    } catch (err) {
-      setErroAtual(getErrorMessage(err));
-      return;
-    } finally {
-      setVerificando(false);
-    }
-    update.mutate({ id: user.id, input: { senha: senha.nova } }, { onSuccess: () => setSenha(SENHA_VAZIA) });
-  }
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <Card>
-        <form onSubmit={onSubmit} noValidate>
-          <CardHeader title="Alterar Senha" icon={<KeyRound className="h-5 w-5" />} />
-          {editavel ? (
-            <CardBody className="space-y-4">
-              <Field label="Senha atual" required error={erroAtual}>
-                {(id) => (
-                  <Input
-                    id={id}
-                    type="password"
-                    autoComplete="current-password"
-                    value={senha.atual}
-                    onChange={(e) => {
-                      setErroAtual(undefined);
-                      setSenha({ ...senha, atual: e.target.value });
-                    }}
-                  />
-                )}
-              </Field>
-              <Field label="Nova senha" required error={erroNova} hint="Mínimo de 8 caracteres, com maiúsculas, minúsculas, números e símbolos.">
-                {(id) => <Input id={id} type="password" autoComplete="new-password" value={senha.nova} onChange={(e) => setSenha({ ...senha, nova: e.target.value })} />}
-              </Field>
-              {senha.nova && (
-                <div aria-live="polite">
-                  <Progress value={(forca / 5) * 100} tone={FORCA[forca].tone} size="xs" />
-                  <p className="mt-1 text-xs text-brand-muted">
-                    Força: <strong>{FORCA[forca].label}</strong>
-                  </p>
-                </div>
-              )}
-              <Field label="Confirmar nova senha" required error={confere ? undefined : 'As senhas não conferem.'}>
-                {(id) => <Input id={id} type="password" autoComplete="new-password" value={senha.confirmar} onChange={(e) => setSenha({ ...senha, confirmar: e.target.value })} />}
-              </Field>
-            </CardBody>
-          ) : (
-            <CardBody>
-              <Callout tone="info" icon={<Lock className="h-5 w-5" />}>
-                A redefinição de senha é feita pelo administrador do sistema. Solicite pelo Service Desk.
-              </Callout>
-            </CardBody>
-          )}
-          {editavel && (
-            <CardFooter className="justify-end">
-              <Button type="submit" disabled={!valido} loading={verificando || update.isPending}>
-                Atualizar Senha
-              </Button>
-            </CardFooter>
-          )}
-        </form>
-      </Card>
-      <Callout tone="info" title="Sessão atual">
-        {user.ultimoAcesso ? `Último acesso ${timeAgo(user.ultimoAcesso)}. ` : ''}A sessão expira automaticamente; ao expirar, será necessário entrar novamente.
-      </Callout>
-    </div>
   );
 }
 
@@ -280,7 +177,7 @@ export function PerfilView() {
       </Card>
 
       {aba === 'dados' && <DadosTab key={`${user.id}-${user.nome}-${user.cargo}`} user={user} editavel={editavel} />}
-      {aba === 'seguranca' && <SegurancaTab user={user} editavel={editavel} />}
+      {aba === 'seguranca' && <SegurancaTab user={user} />}
       {aba === 'preferencias' && <PreferenciasTab key={user.id} userId={user.id} />}
     </>
   );

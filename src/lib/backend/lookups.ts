@@ -1,4 +1,4 @@
-import { api, TOKEN_KEY } from '@/lib/api';
+import { api, getAccessToken } from '@/lib/api';
 import { data, getAll, TETO_PAGINA } from '@/lib/http';
 import { queryClient } from '@/lib/query-client';
 import type { ApiCategoria, ApiDepartamento, ApiGrupo, ApiUsuario, PerfilApi } from './types';
@@ -32,8 +32,7 @@ export function byId<T extends { id: number }>(rows: T[]) {
 }
 
 function jwtPayload(): { sub: number; id_cliente: number; perfil: PerfilApi } {
-  const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
-  const payload = token?.split('.')[1];
+  const payload = getAccessToken()?.split('.')[1];
   if (!payload) throw new Error('Sessão expirada. Faça login novamente.');
   try {
     const raw = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { sub: unknown; id_cliente: unknown; perfil: unknown };

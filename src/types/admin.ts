@@ -79,7 +79,19 @@ export interface Branding {
   corFundo: string;
 }
 
-export type TipoIntegracao = 'LDAP' | 'AD' | 'SMTP' | 'WEBHOOK';
+export type TipoIntegracao = 'LDAP' | 'AD' | 'SMTP' | 'WEBHOOK' | 'EMAIL_ENTRADA';
+
+/** Eventos que um webhook pode assinar (nomes enviados no cabeçalho X-ITSM-Event). */
+export const EVENTOS_WEBHOOK = [
+  { value: 'chamado.criado', label: 'Chamado criado' },
+  { value: 'chamado.atribuido', label: 'Chamado atribuído' },
+  { value: 'chamado.comentado', label: 'Novo comentário' },
+  { value: 'chamado.status_alterado', label: 'Status alterado' },
+  { value: 'sla.perto_de_vencer', label: 'SLA perto de vencer' },
+  { value: 'sla.vencido', label: 'SLA vencido' },
+  { value: 'aprovacao.solicitada', label: 'Aprovação solicitada' },
+  { value: 'aprovacao.decidida', label: 'Aprovação decidida' },
+] as const;
 
 /** Tabela `integracoes` */
 export interface Integracao {
@@ -89,6 +101,8 @@ export interface Integracao {
   host: string;
   porta: number;
   ativo: boolean;
+  /** Configuração devolvida pela API, com os campos secretos mascarados. */
+  configuracoes?: Record<string, unknown>;
   ultimoTeste: string | null;
   ultimoResultado: 'SUCESSO' | 'FALHA' | null;
   latenciaMs: number | null;
@@ -97,9 +111,23 @@ export interface Integracao {
 export interface IntegracaoInput {
   nome: string;
   tipo: TipoIntegracao;
+  ativo: boolean;
+  /** LDAP, AD e SMTP. */
   host: string;
   porta: number;
-  ativo: boolean;
+  /** SMTP */
+  usuario?: string;
+  senha?: string;
+  remetente?: string;
+  /** Webhook */
+  url?: string;
+  segredo?: string;
+  eventos?: string[];
+  /** Entrada de e-mail */
+  token?: string;
+  idCategoria?: number;
+  prioridade?: 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA';
+  tipoChamado?: 'INCIDENTE' | 'REQUISICAO';
 }
 
 export interface TesteIntegracaoResult {

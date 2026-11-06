@@ -1,9 +1,9 @@
 import { api } from '@/lib/api';
 import type { ApiAtivo } from '@/lib/backend/types';
-import { data, getAll, matches, request, TETO_PAGINA } from '@/lib/http';
+import { data, getAll, getPagina, matches, paginate, request, TETO_PAGINA } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
-import type { Ativo, AtivoDetalhe, AtivoFiltros, AtivoInput, AtivosResumo, Dependencia, Especificacao, Manutencao, ManutencaoInput, StatusAtivo, StatusChamado, TipoAtivo } from '@/types';
+import type { Ativo, AtivoDetalhe, AtivoFiltros, AtivoInput, AtivosResumo, Dependencia, Especificacao, Manutencao, ManutencaoInput, Paginated, StatusAtivo, StatusChamado, TipoAtivo } from '@/types';
 
 const toResumo = ({ especificacoes: _e, manutencoes: _m, dependencias: _d, chamadosVinculados: _c, ...a }: AtivoDetalhe): Ativo => a;
 const find = (id: number) => {
@@ -117,9 +117,65 @@ export function filtrarAtivos(todos: Ativo[], f: Omit<AtivoFiltros, 'page' | 'pa
   );
 }
 
+type FiltrosAtivo = Omit<AtivoFiltros, 'page' | 'pageSize'>;
+
+/** Filtros no vocabulário da API; busca, tipo e status são aplicados no servidor. */
+const paramsAtivos = (f: FiltrosAtivo) => ({
+  ...(f.search?.trim() && { busca: f.search.trim() }),
+  ...(f.tipo && { tipo_ativo: TIPO_PARA_API[f.tipo] }),
+  ...(f.status && { status: STATUS_PARA_API[f.status] }),
+});
+
+interface ApiAtivosResumo {
+  total: number;
+  por_tipo: Record<string, number>;
+  por_status: Record<string, number>;
+}
+
+function resumoDaApi(r: ApiAtivosResumo): AtivosResumo {
+  const porTipo = Object.fromEntries(Object.keys(TIPO_PARA_API).map((t) => [t, 0])) as Record<TipoAtivo, number>;
+  for (const [tipo, n] of Object.entries(r.por_tipo)) porTipo[TIPO_DA_API[tipo] ?? 'OUTRO'] += n;
+  const porStatus: Partial<Record<StatusAtivo, number>> = {};
+  for (const [status, n] of Object.entries(r.por_status)) {
+    const s = STATUS_DA_API[status] ?? 'ESTOQUE';
+    porStatus[s] = (porStatus[s] ?? 0) + n;
+  }
+  const operacionais = r.total - (porStatus.DESCARTADO ?? 0);
+  return {
+    total: r.total,
+    porTipo,
+    disponibilidadePct: operacionais > 0 ? ((porStatus.EM_USO ?? 0) / operacionais) * 100 : 0,
+    emManutencao: porStatus.MANUTENCAO ?? 0,
+  };
+}
+
 export const ativosService = {
-  /** Inventário completo; filtros, resumo e paginação são calculados na tela. */
+  /** Inventário completo (sem filtro): usado só em seletores. A tela de ativos usa `pagina` e `resumo`. */
   list: () => request<Ativo[]>(fetchAtivos, () => db.ativos.map(toResumo)),
+
+  /** Uma página já filtrada pelo servidor (busca, tipo, status). */
+  pagina: (f: AtivoFiltros) =>
+    request<Paginated<Ativo>>(
+      async () => {
+        const p = await getPagina<ApiAtivo>('/ativos', paramsAtivos(f), f.page ?? 1, f.pageSize ?? 10);
+        return { ...p, data: p.data.map(toAtivo) };
+      },
+      () => paginate(filtrarAtivos(db.ativos.map(toResumo), f), f.page, f.pageSize),
+    ),
+
+  /** Contagens do inventário inteiro (cartões e abas), sem baixar a lista. */
+  resumo: () =>
+    request<AtivosResumo>(
+      async () => resumoDaApi(await data(api.get<ApiAtivosResumo>('/ativos/resumo'))),
+      () => resumirAtivos(db.ativos.map(toResumo)),
+    ),
+
+  /** Todos os ativos que atendem ao filtro, para exportar (percorre as páginas do servidor). */
+  exportar: (f: FiltrosAtivo) =>
+    request<Ativo[]>(
+      async () => (await getAll<ApiAtivo>('/ativos', TETO_PAGINA.ativos, paramsAtivos(f))).map(toAtivo),
+      () => filtrarAtivos(db.ativos.map(toResumo), f),
+    ),
 
   get: (id: number) =>
     request<AtivoDetalhe>(

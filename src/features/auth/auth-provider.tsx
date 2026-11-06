@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { httpStatus, SESSION_EXPIRED_EVENT, TOKEN_KEY } from '@/lib/api';
+import { httpStatus, SESSION_EXPIRED_EVENT, setAccessToken } from '@/lib/api';
 import { PERFIL_RANK, perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import type { LoginInput, Papel, Usuario } from '@/types';
 import { authService } from './services/auth.service';
@@ -19,6 +19,8 @@ interface AuthContextValue {
   updateUser: (user: Usuario) => void;
 }
 
+const CANAL_AUTH = 'itsm-auth';
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -29,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const encerrarSessao = useCallback(
     (redirect: string) => {
-      localStorage.removeItem(TOKEN_KEY);
+      setAccessToken(null);
       queryClient.clear();
       setUser(null);
       setStatus('unauthenticated');
@@ -38,23 +40,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient, router],
   );
 
+  // Ao abrir ou recarregar a página não há token em memória: o cookie de refresh gera um novo.
   useEffect(() => {
     let cancelled = false;
-    if (!localStorage.getItem(TOKEN_KEY)) {
-      setStatus('unauthenticated');
-      return;
-    }
     authService
-      .me()
-      .then((u) => {
+      .restaurar()
+      .then(async (existe) => {
+        if (cancelled) return;
+        if (!existe) {
+          setStatus('unauthenticated');
+          return;
+        }
+        const u = await authService.me();
         if (cancelled) return;
         setUser(u);
         setStatus('authenticated');
       })
       .catch((err) => {
         if (cancelled) return;
-        // Só descarta o token quando a API o recusa. Falha de rede ou 5xx não deve deslogar o usuário.
-        if (httpStatus(err) === 401 || httpStatus(err) === 403) localStorage.removeItem(TOKEN_KEY);
+        // Falha de rede ou 5xx: não há como saber se a sessão vale; segue para o login sem apagar nada.
+        if (httpStatus(err) === 401 || httpStatus(err) === 403) setAccessToken(null);
         setStatus('unauthenticated');
       });
     return () => {
@@ -68,34 +73,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const next = window.location.pathname + window.location.search;
       encerrarSessao(`/login?next=${encodeURIComponent(next)}`);
     };
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === TOKEN_KEY && !e.newValue) encerrarSessao('/login');
-    };
+    // Sair em uma aba encerra as demais (o token só existe na memória de cada aba).
+    const canal = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(CANAL_AUTH) : null;
+    if (canal) canal.onmessage = (e: MessageEvent<string>) => e.data === 'logout' && encerrarSessao('/login');
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
-    window.addEventListener('storage', onStorage);
     return () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
-      window.removeEventListener('storage', onStorage);
+      canal?.close();
     };
   }, [encerrarSessao]);
 
   const login = useCallback(
     async (input: LoginInput) => {
       const token = await authService.login(input);
-      localStorage.setItem(TOKEN_KEY, token);
+      setAccessToken(token);
       queryClient.clear();
       try {
         setUser(await authService.me());
         setStatus('authenticated');
       } catch (err) {
-        localStorage.removeItem(TOKEN_KEY);
+        setAccessToken(null);
         throw err;
       }
     },
     [queryClient],
   );
 
-  const logout = useCallback(() => encerrarSessao('/login'), [encerrarSessao]);
+  const logout = useCallback(() => {
+    void authService.logout();
+    if (typeof BroadcastChannel !== 'undefined') {
+      const canal = new BroadcastChannel(CANAL_AUTH);
+      canal.postMessage('logout');
+      canal.close();
+    }
+    encerrarSessao('/login');
+  }, [encerrarSessao]);
 
   const hasRole = useCallback(
     (...roles: Papel[]) => {

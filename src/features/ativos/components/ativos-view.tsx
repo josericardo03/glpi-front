@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Download, PlusCircle, Wrench } from 'lucide-react';
 import {
   Button,
@@ -18,19 +18,19 @@ import {
   SearchInput,
   Select,
   Tabs,
+  useToast,
   UserCell,
   type Column,
 } from '@/components/ui';
-import { useDebounce, useFilters } from '@/hooks/use-filters';
+import { useAjustarPagina, useDebounce, useFilters } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
 import { exportCsv } from '@/lib/csv';
 import { formatDate, formatPercent } from '@/lib/format';
-import { paginate } from '@/lib/http';
 import { textoInvalido } from '@/lib/validation';
 import type { Ativo, AtivoFiltros, AtivoInput, StatusAtivo, TipoAtivo } from '@/types';
 import { useUsuarioOptions } from '@/features/cadastros/use-cadastros';
-import { filtrarAtivos, resumirAtivos } from '../ativos.service';
-import { useAtivos, useCreateAtivo, useUpdateAtivo } from '../use-ativos';
+import { ativosService } from '../ativos.service';
+import { useAtivosPagina, useAtivosResumo, useCreateAtivo, useUpdateAtivo } from '../use-ativos';
 import { AtivoIcon, STATUS_ATIVO, STATUS_ATIVO_OPTIONS, StatusAtivoBadge, TIPO_ATIVO, TIPO_OPTIONS } from './ativo-meta';
 
 const columns: Column<Ativo>[] = [
@@ -69,7 +69,12 @@ export function AtivosView() {
   const router = useRouter();
   const { filters, setFilter } = useFilters(INITIAL);
   const search = useDebounce(filters.search);
-  const { data, isLoading, isError, error, refetch } = useAtivos();
+  const { page = 1, pageSize = 10, ...criterios } = filters;
+  const { data: pagina, isLoading, isError, error, refetch } = useAtivosPagina({ ...criterios, search, page, pageSize });
+  useAjustarPagina(pagina, (p) => setFilter('page', p));
+  const { data: r } = useAtivosResumo();
+  const [exportando, setExportando] = useState(false);
+  const toast = useToast();
   const create = useCreateAtivo();
   const update = useUpdateAtivo();
   const usuarios = useUsuarioOptions();
@@ -77,9 +82,6 @@ export function AtivosView() {
   const [editando, setEditando] = useState<Ativo | null>(null);
   const [form, setForm] = useState<AtivoInput>(EMPTY);
 
-  const r = useMemo(() => (data ? resumirAtivos(data) : undefined), [data]);
-  const filtrados = useMemo(() => filtrarAtivos(data ?? [], { search, tipo: filters.tipo, status: filters.status }), [data, search, filters.tipo, filters.status]);
-  const pagina = paginate(filtrados, filters.page, filters.pageSize);
   const set = <K extends keyof AtivoInput>(k: K, v: AtivoInput[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const erros = {
@@ -88,6 +90,26 @@ export function AtivosView() {
     data: form.dataAquisicao && form.dataAquisicao > hoje() ? 'A data de aquisição não pode estar no futuro.' : undefined,
   };
   const valid = !textoInvalido(form.codigo, { min: 1, max: 50 }) && !textoInvalido(form.nome, { max: 150 }) && !erros.data;
+
+  async function exportar() {
+    setExportando(true);
+    try {
+      // O servidor devolve só uma página por vez: percorre todas, com o mesmo filtro da tela.
+      const todos = await ativosService.exportar({ search, tipo: filters.tipo, status: filters.status });
+      exportCsv('ativos', todos, [
+        { header: 'Código', value: (a) => a.codigo },
+        { header: 'Nome', value: (a) => a.nome },
+        { header: 'Tipo', value: (a) => TIPO_ATIVO[a.tipo].label },
+        { header: 'Responsável', value: (a) => a.responsavelNome ?? '' },
+        { header: 'Status', value: (a) => STATUS_ATIVO[a.status].label },
+        { header: 'Aquisição', value: (a) => (a.dataAquisicao ? formatDate(a.dataAquisicao) : '') },
+      ]);
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      setExportando(false);
+    }
+  }
 
   function fechar() {
     setOpen(false);
@@ -145,17 +167,9 @@ export function AtivosView() {
             <Button
               variant="subtle"
               icon={<Download className="h-4 w-4" />}
-              disabled={!filtrados.length}
-              onClick={() =>
-                exportCsv('ativos', filtrados, [
-                  { header: 'Código', value: (a) => a.codigo },
-                  { header: 'Nome', value: (a) => a.nome },
-                  { header: 'Tipo', value: (a) => TIPO_ATIVO[a.tipo].label },
-                  { header: 'Responsável', value: (a) => a.responsavelNome ?? '' },
-                  { header: 'Status', value: (a) => STATUS_ATIVO[a.status].label },
-                  { header: 'Aquisição', value: (a) => (a.dataAquisicao ? formatDate(a.dataAquisicao) : '') },
-                ])
-              }
+              disabled={!pagina?.total || exportando}
+              loading={exportando}
+              onClick={exportar}
             >
               Exportar
             </Button>
@@ -194,13 +208,13 @@ export function AtivosView() {
       ) : (
         <DataTable
           columns={colunas}
-          data={data ? pagina.data : undefined}
+          data={pagina?.data}
           loading={isLoading}
           caption="Inventário de ativos"
           rowKey={(a) => a.id}
           onRowClick={(a) => router.push(`/ativos/${a.id}`)}
           emptyMessage="Nenhum ativo encontrado para os filtros aplicados."
-          footer={data && <Pagination page={pagina.page} pageSize={filters.pageSize!} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="ativos" />}
+          footer={pagina && <Pagination page={pagina.page} pageSize={pageSize} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="ativos" />}
         />
       )}
 

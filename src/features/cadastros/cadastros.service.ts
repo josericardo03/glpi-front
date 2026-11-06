@@ -2,7 +2,7 @@ import { api } from '@/lib/api';
 import { byId, invalidateLookups, lookups, perfilAtualAtinge } from '@/lib/backend/lookups';
 import { perfilPrincipal, PERFIL_RANK, toUsuario } from '@/lib/backend/usuario.mapper';
 import type { ApiUsuario } from '@/lib/backend/types';
-import { data, matches, request } from '@/lib/http';
+import { contar, data, getAll, getPagina, matches, paginate, request, TETO_PAGINA } from '@/lib/http';
 import { uid } from '@/lib/utils';
 import * as db from '@/mocks/db';
 import type {
@@ -16,6 +16,7 @@ import type {
   MembroGrupo,
   MembroInput,
   PageParams,
+  Paginated,
   Papel,
   StatusUsuario,
   Tecnico,
@@ -52,11 +53,66 @@ async function mapearUsuario(row: ApiUsuario) {
 /** Campos alteráveis via PATCH /usuarios/:id (e-mail é imutável). */
 export type UsuarioUpdate = Partial<Pick<UsuarioInput, 'nome' | 'cargo' | 'departamentoId' | 'papeis' | 'status' | 'senha'>>;
 
+/** Filtros no vocabulário da API (busca, perfil, status, departamento). */
+const paramsUsuarios = (f: Omit<UsuarioFiltros, 'page' | 'pageSize'>) => ({
+  ...(f.search?.trim() && { busca: f.search.trim() }),
+  ...(f.papel && { perfil: f.papel }),
+  ...(f.status && { status: f.status }),
+  ...(f.departamentoId && { id_departamento: f.departamentoId }),
+});
+
+export interface UsuariosContagens {
+  total: number;
+  administradores: number;
+  ativos: number;
+}
+
 export const usuariosService = {
-  /** Lista filtrada completa; a paginação é feita na tela. */
+  /** Lista filtrada completa (seletores e lookups); a tela de usuários usa `pagina`. */
   list: (f: Omit<UsuarioFiltros, 'page' | 'pageSize'>) =>
     request<Usuario[]>(
       async () => filtrarUsuarios(await usuariosApi(), f),
+      () => filtrarUsuarios(db.usuarios, f),
+    ),
+
+  /** Uma página já filtrada pelo servidor (busca, perfil, status e departamento). */
+  pagina: (f: UsuarioFiltros) =>
+    request<Paginated<Usuario>>(
+      async () => {
+        const [p, departamentos] = await Promise.all([getPagina<ApiUsuario>('/usuarios', paramsUsuarios(f), f.page ?? 1, f.pageSize ?? 10), lookups.departamentos()]);
+        const deps = byId(departamentos);
+        return { ...p, data: p.data.map((u) => toUsuario(u, deps)) };
+      },
+      () => paginate(filtrarUsuarios(db.usuarios, f), f.page, f.pageSize),
+    ),
+
+  /** Totais do filtro atual (cartões da tela), por contagem no servidor, sem baixar a lista. */
+  contagens: (f: Omit<UsuarioFiltros, 'page' | 'pageSize'>) =>
+    request<UsuariosContagens>(
+      async () => {
+        const base = paramsUsuarios(f);
+        // Um filtro de perfil/status incompatível com o cartão zera o cartão (ex.: perfil=TECNICO → 0 administradores).
+        const [total, administradores, ativos] = await Promise.all([
+          contar('/usuarios', base),
+          !f.papel || f.papel === 'ADMIN' ? contar('/usuarios', { ...base, perfil: 'ADMIN' }) : 0,
+          !f.status || f.status === 'ATIVO' ? contar('/usuarios', { ...base, status: 'ATIVO' }) : 0,
+        ]);
+        return { total, administradores, ativos };
+      },
+      () => {
+        const lista = filtrarUsuarios(db.usuarios, f);
+        return { total: lista.length, administradores: lista.filter((u) => u.papeis.includes('ADMIN')).length, ativos: lista.filter((u) => u.status === 'ATIVO').length };
+      },
+    ),
+
+  /** Todos os usuários do filtro, para exportar (percorre as páginas do servidor). */
+  exportar: (f: Omit<UsuarioFiltros, 'page' | 'pageSize'>) =>
+    request<Usuario[]>(
+      async () => {
+        const [rows, departamentos] = await Promise.all([getAll<ApiUsuario>('/usuarios', TETO_PAGINA.usuarios, paramsUsuarios(f)), lookups.departamentos()]);
+        const deps = byId(departamentos);
+        return rows.map((u) => toUsuario(u, deps));
+      },
       () => filtrarUsuarios(db.usuarios, f),
     ),
 

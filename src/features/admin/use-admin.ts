@@ -79,6 +79,18 @@ export const useSalvarBranding = () =>
   useApiMutation({ mutationFn: (b: Branding) => brandingService.salvar(b), invalidate: [adminKeys.branding], successMessage: 'Branding atualizado para todo o portal.' });
 export const useCreateIntegracao = () =>
   useApiMutation({ mutationFn: (i: IntegracaoInput) => integracoesService.create(i), invalidate: [adminKeys.integracoes], successMessage: 'Conector criado.' });
+export const useAtualizarIntegracao = () =>
+  useApiMutation({
+    mutationFn: (i: { id: number; input: IntegracaoInput }) => integracoesService.atualizar(i.id, i.input),
+    invalidate: [adminKeys.integracoes],
+    successMessage: 'Conector atualizado.',
+  });
+export const useAtivarIntegracao = () =>
+  useApiMutation({
+    mutationFn: (i: { id: number; ativo: boolean }) => integracoesService.definirAtivo(i.id, i.ativo),
+    invalidate: [adminKeys.integracoes],
+    successMessage: (_, i) => (i.ativo ? 'Conector ativado.' : 'Conector desativado.'),
+  });
 export const useTestarIntegracao = () =>
   useApiMutation({ mutationFn: (id: number) => integracoesService.testar(id), invalidate: [adminKeys.integracoes] });
 export const useCreateCliente = () =>

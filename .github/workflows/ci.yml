@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Tipos (tsc)
+        run: npm run typecheck
+
+      # Compila com a API real e também em modo mock, para os dois caminhos não quebrarem.
+      - name: Build (API real)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3000/api
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: Build (mocks)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_USE_MOCKS: 'true'
+          ALLOW_MOCKS_IN_PRODUCTION: 'true'
+          NEXT_TELEMETRY_DISABLED: '1'

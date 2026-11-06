@@ -22,6 +22,8 @@ type FiltrosUsuario = Omit<UsuarioFiltros, 'page' | 'pageSize'>;
 export const cadastrosKeys = {
   usuarios: ['usuarios'] as const,
   usuariosList: (f: FiltrosUsuario) => ['usuarios', f] as const,
+  usuariosPagina: (f: UsuarioFiltros) => ['usuarios', 'pagina', f] as const,
+  usuariosContagens: (f: FiltrosUsuario) => ['usuarios', 'contagens', f] as const,
   departamentos: ['departamentos'] as const,
   categorias: ['categorias'] as const,
   grupos: ['grupos'] as const,
@@ -31,6 +33,11 @@ export const cadastrosKeys = {
 // ---------- Queries ----------
 export const useUsuarios = (f: FiltrosUsuario = {}) =>
   useQuery({ queryKey: cadastrosKeys.usuariosList(f), queryFn: () => usuariosService.list(f), placeholderData: keepPreviousData });
+/** Uma página da lista de usuários, filtrada no servidor. */
+export const useUsuariosPagina = (f: UsuarioFiltros) =>
+  useQuery({ queryKey: cadastrosKeys.usuariosPagina(f), queryFn: () => usuariosService.pagina(f), placeholderData: keepPreviousData });
+export const useUsuariosContagens = (f: FiltrosUsuario) =>
+  useQuery({ queryKey: cadastrosKeys.usuariosContagens(f), queryFn: () => usuariosService.contagens(f), placeholderData: keepPreviousData });
 export const useDepartamentos = () => useQuery({ queryKey: cadastrosKeys.departamentos, queryFn: departamentosService.list, ...LOOKUP });
 export const useCategorias = () => useQuery({ queryKey: cadastrosKeys.categorias, queryFn: categoriasService.list, ...LOOKUP });
 export const useGrupos = () => useQuery({ queryKey: cadastrosKeys.grupos, queryFn: gruposService.list, ...LOOKUP });

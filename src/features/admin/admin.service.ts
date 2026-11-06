@@ -274,10 +274,42 @@ function toIntegracao(i: ApiIntegracao): Integracao {
     host: String(cfg.host ?? cfg.url ?? ''),
     porta: Number(cfg.port ?? cfg.porta ?? 0),
     ativo: i.status === 'ATIVO',
+    configuracoes: cfg,
     ultimoTeste: null,
     ultimoResultado: null,
     latenciaMs: null,
   };
+}
+
+/** Monta o objeto `configuracoes` de cada tipo. Campos secretos em branco não são enviados (a API mantém o gravado). */
+function configuracoesDe(i: IntegracaoInput): Record<string, unknown> {
+  const preenchido = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined);
+  switch (i.tipo) {
+    case 'SMTP':
+      return {
+        host: i.host.trim(),
+        port: i.porta,
+        secure: i.porta === 465,
+        ...(preenchido(i.usuario) && { user: preenchido(i.usuario) }),
+        ...(preenchido(i.senha) && { password: i.senha }),
+        ...(preenchido(i.remetente) && { from: preenchido(i.remetente) }),
+      };
+    case 'WEBHOOK':
+      return {
+        url: (i.url ?? '').trim(),
+        ...(preenchido(i.segredo) && { secret: i.segredo }),
+        eventos: i.eventos ?? [],
+      };
+    case 'EMAIL_ENTRADA':
+      return {
+        ...(preenchido(i.token) && { token: i.token }),
+        id_categoria: i.idCategoria,
+        prioridade: i.prioridade ?? 'MEDIA',
+        tipo: i.tipoChamado ?? 'INCIDENTE',
+      };
+    default:
+      return { host: i.host.trim(), port: i.porta };
+  }
 }
 
 export const integracoesService = {
@@ -289,13 +321,32 @@ export const integracoesService = {
           api.post('/admin/integracoes', {
             nome: input.nome.trim(),
             tipo: input.tipo,
-            configuracoes: { host: input.host.trim(), port: input.porta },
+            configuracoes: configuracoesDe(input),
             status: input.ativo ? 'ATIVO' : 'INATIVO',
           }),
         ),
       () => {
         const i: Integracao = { ...input, id: uid(), ultimoTeste: null, ultimoResultado: null, latenciaMs: null };
         db.integracoes.push(i);
+        return i;
+      },
+    ),
+  atualizar: (id: number, input: IntegracaoInput) =>
+    request<unknown>(
+      () => data(api.patch(`/admin/integracoes/${id}`, { nome: input.nome.trim(), configuracoes: configuracoesDe(input), status: input.ativo ? 'ATIVO' : 'INATIVO' })),
+      () => {
+        const i = db.integracoes.find((x) => x.id === id);
+        if (i) Object.assign(i, { nome: input.nome.trim(), host: input.host, porta: input.porta, ativo: input.ativo });
+        return i;
+      },
+    ),
+  /** Liga ou desliga sem mexer na configuração. */
+  definirAtivo: (id: number, ativo: boolean) =>
+    request<unknown>(
+      () => data(api.patch(`/admin/integracoes/${id}`, { status: ativo ? 'ATIVO' : 'INATIVO' })),
+      () => {
+        const i = db.integracoes.find((x) => x.id === id);
+        if (i) i.ativo = ativo;
         return i;
       },
     ),

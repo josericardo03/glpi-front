@@ -17,6 +17,8 @@ export interface Usuario {
   avatarUrl?: string | null;
   ultimoAcesso?: string | null;
   criadoEm?: string | null;
+  /** Verificação em duas etapas ativa (vem de /auth/me). */
+  mfaAtivo?: boolean;
 }
 
 export interface UsuarioInput {
@@ -34,6 +36,8 @@ export interface LoginInput {
   senha: string;
   /** Só necessário quando o mesmo e-mail existe em mais de um cliente. */
   idCliente?: number;
+  /** Código do aplicativo autenticador (ou de recuperação), quando a conta tem verificação em duas etapas. */
+  codigoMfa?: string;
 }
 
 export interface AuthResponse {

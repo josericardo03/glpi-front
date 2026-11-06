@@ -16,21 +16,21 @@ import {
   SearchInput,
   Select,
   StatCard,
+  useToast,
   UserCell,
   type BadgeTone,
   type Column,
 } from '@/components/ui';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useDebounce, useFilters } from '@/hooks/use-filters';
+import { useAjustarPagina, useDebounce, useFilters } from '@/hooks/use-filters';
 import { getErrorMessage } from '@/lib/api';
 import { PAPEL_LABEL, perfilPrincipal } from '@/lib/backend/usuario.mapper';
 import { exportCsv } from '@/lib/csv';
 import { formatNumber } from '@/lib/format';
-import { paginate } from '@/lib/http';
 import { isEmail, semErros, senhaInvalida, textoInvalido } from '@/lib/validation';
 import type { Papel, StatusUsuario, Usuario, UsuarioInput } from '@/types';
-import type { UsuarioFiltros } from '../cadastros.service';
-import { useCreateUsuario, useDepartamentoOptions, useUpdateUsuario, useUsuarios } from '../use-cadastros';
+import { usuariosService, type UsuarioFiltros } from '../cadastros.service';
+import { useCreateUsuario, useDepartamentoOptions, useUpdateUsuario, useUsuariosContagens, useUsuariosPagina } from '../use-cadastros';
 
 const PAPEL_TONE: Record<Papel, BadgeTone> = { ADMIN: 'dark', GESTOR: 'pendente', TECNICO: 'primary', SOLICITANTE: 'neutral' };
 const PAPEIS = (Object.keys(PAPEL_TONE) as Papel[]).map((p) => ({ value: p, label: PAPEL_LABEL[p] }));
@@ -59,7 +59,11 @@ export function UsuariosView() {
   const { filters, setFilter, reset } = useFilters(INITIAL);
   const search = useDebounce(filters.search);
   const { page = 1, pageSize = 10, ...criterios } = filters;
-  const { data: todos, isLoading, isError, error, refetch } = useUsuarios({ ...criterios, search });
+  const { data: pagina, isLoading, isError, error, refetch } = useUsuariosPagina({ ...criterios, search, page, pageSize });
+  useAjustarPagina(pagina, (p) => setFilter('page', p));
+  const { data: contagens } = useUsuariosContagens({ ...criterios, search });
+  const [exportando, setExportando] = useState(false);
+  const toast = useToast();
   const departamentos = useDepartamentoOptions();
   const create = useCreateUsuario();
   const update = useUpdateUsuario();
@@ -133,8 +137,25 @@ export function UsuariosView() {
     [podeGerir],
   );
 
-  const lista = todos ?? [];
-  const pagina = paginate(lista, page, pageSize);
+  async function exportar() {
+    setExportando(true);
+    try {
+      const lista = await usuariosService.exportar({ ...criterios, search });
+      exportCsv('usuarios', lista, [
+        { header: 'Nome', value: (u) => u.nome },
+        { header: 'E-mail', value: (u) => u.email },
+        { header: 'Departamento', value: (u) => u.departamentoNome },
+        { header: 'Cargo', value: (u) => u.cargo },
+        { header: 'Perfil', value: (u) => PAPEL_LABEL[perfilPrincipal(u.papeis)] },
+        { header: 'Status', value: (u) => STATUS_USUARIO[u.status].label },
+      ]);
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      setExportando(false);
+    }
+  }
+
   const editandoASiMesmo = editing !== 'new' && editing?.id === user?.id;
 
   return (
@@ -152,9 +173,9 @@ export function UsuariosView() {
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <StatCard label="Usuários (filtro atual)" value={todos && formatNumber(lista.length)} icon={<Users className="h-5 w-5" />} tone="dark" loading={isLoading} />
-        <StatCard label="Administradores" value={todos && lista.filter((u) => u.papeis.includes('ADMIN')).length} icon={<ShieldCheck className="h-5 w-5" />} loading={isLoading} />
-        <StatCard label="Ativos" value={todos && lista.filter((u) => u.status === 'ATIVO').length} icon={<UserCheck className="h-5 w-5" />} tone="success" loading={isLoading} />
+        <StatCard label="Usuários (filtro atual)" value={contagens && formatNumber(contagens.total)} icon={<Users className="h-5 w-5" />} tone="dark" loading={isLoading} />
+        <StatCard label="Administradores" value={contagens?.administradores} icon={<ShieldCheck className="h-5 w-5" />} loading={isLoading} />
+        <StatCard label="Ativos" value={contagens?.ativos} icon={<UserCheck className="h-5 w-5" />} tone="success" loading={isLoading} />
       </div>
 
       <FilterBar
@@ -164,17 +185,9 @@ export function UsuariosView() {
             <Button
               variant="outline"
               icon={<Download className="h-4 w-4" />}
-              disabled={!lista.length}
-              onClick={() =>
-                exportCsv('usuarios', lista, [
-                  { header: 'Nome', value: (u) => u.nome },
-                  { header: 'E-mail', value: (u) => u.email },
-                  { header: 'Departamento', value: (u) => u.departamentoNome },
-                  { header: 'Cargo', value: (u) => u.cargo },
-                  { header: 'Perfil', value: (u) => PAPEL_LABEL[perfilPrincipal(u.papeis)] },
-                  { header: 'Status', value: (u) => STATUS_USUARIO[u.status].label },
-                ])
-              }
+              disabled={!pagina?.total || exportando}
+              loading={exportando}
+              onClick={exportar}
             >
               CSV
             </Button>
@@ -194,12 +207,12 @@ export function UsuariosView() {
       ) : (
         <DataTable
           columns={columns}
-          data={todos ? pagina.data : undefined}
+          data={pagina?.data}
           loading={isLoading}
           caption="Usuários cadastrados"
           rowKey={(u) => u.id}
           rowClassName={(u) => (u.status === 'DESATIVADO' ? 'opacity-60' : undefined)}
-          footer={todos && <Pagination page={pagina.page} pageSize={pageSize} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="usuários" />}
+          footer={pagina && <Pagination page={pagina.page} pageSize={pageSize} total={pagina.total} onPageChange={(p) => setFilter('page', p)} label="usuários" />}
         />
       )}
 

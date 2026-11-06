@@ -1,17 +1,25 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useApiMutation } from '@/hooks/use-api-mutation';
-import type { Ativo, AtivoInput, Especificacao, ManutencaoInput } from '@/types';
+import type { Ativo, AtivoFiltros, AtivoInput, Especificacao, ManutencaoInput } from '@/types';
 import { ativosService } from './ativos.service';
 
 export const ativosKeys = {
   all: ['ativos'] as const,
   list: ['ativos', 'list'] as const,
+  pagina: (f: AtivoFiltros) => ['ativos', 'pagina', f] as const,
+  resumo: ['ativos', 'resumo'] as const,
   detail: (id: number) => ['ativos', 'detail', id] as const,
 };
 
 export const useAtivos = () => useQuery({ queryKey: ativosKeys.list, queryFn: ativosService.list, staleTime: 30_000 });
+
+/** Uma página do inventário, filtrada no servidor; mantém a anterior na tela enquanto carrega a próxima. */
+export const useAtivosPagina = (f: AtivoFiltros) =>
+  useQuery({ queryKey: ativosKeys.pagina(f), queryFn: () => ativosService.pagina(f), placeholderData: keepPreviousData, staleTime: 15_000 });
+
+export const useAtivosResumo = () => useQuery({ queryKey: ativosKeys.resumo, queryFn: ativosService.resumo, staleTime: 30_000 });
 
 export const useAtivo = (id: number) =>
   useQuery({ queryKey: ativosKeys.detail(id), queryFn: () => ativosService.get(id), enabled: Number.isInteger(id) && id > 0 });

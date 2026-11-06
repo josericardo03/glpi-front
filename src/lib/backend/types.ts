@@ -18,6 +18,7 @@ export interface ApiAuthUser {
   cargo: string;
   status: string;
   tenant?: ApiTenantResumo;
+  mfa_ativo?: boolean;
 }
 
 export interface ApiLoginResponse {
