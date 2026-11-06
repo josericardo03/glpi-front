@@ -43,6 +43,7 @@ import {
   Tabs,
   Textarea,
 } from '@/components/ui';
+import { TextoComLinks } from '@/components/ui/texto-com-links';
 import { getErrorMessage, httpStatus } from '@/lib/api';
 import { formatDateTime, formatMinutes } from '@/lib/format';
 import { recursos } from '@/lib/recursos';
@@ -199,11 +200,24 @@ export function ChamadoWorkspace({ id }: { id: number }) {
           <CardBody>
             <div className="mb-6 rounded-md border border-brand-border bg-slate-50 p-4 text-sm text-slate-700">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">Descrição</p>
-              {c.descricao}
+              <TextoComLinks texto={c.descricao} />
             </div>
-            {tab === 'followups' && <FollowupsTab chamado={c} />}
+            {c.resolucao && finalizado && (
+              <div className="mb-6 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Solução aplicada</p>
+                <TextoComLinks texto={c.resolucao} />
+              </div>
+            )}
+            {/* Follow-ups e worklogs ficam montados (só ocultos) para não perder o texto digitado ao trocar de aba. */}
+            <div hidden={tab !== 'followups'}>
+              <FollowupsTab chamado={c} />
+            </div>
             {tab === 'anexos' && <AnexosTab chamado={c} />}
-            {tab === 'worklogs' && tecnico && <WorklogsTab chamado={c} />}
+            {tecnico && (
+              <div hidden={tab !== 'worklogs'}>
+                <WorklogsTab chamado={c} />
+              </div>
+            )}
             {tab === 'historico' && <HistoricoTab chamado={c} />}
           </CardBody>
         </Card>

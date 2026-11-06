@@ -225,6 +225,18 @@ export const kbService = {
       },
     ),
 
+  /** Descarta um rascunho (a API só exclui artigos em rascunho). */
+  removerRascunho: (id: number) =>
+    request<void>(
+      async () => {
+        await api.delete(`/artigos-kb/${id}`);
+      },
+      () => {
+        const i = db.kbArtigos.findIndex((x) => x.id === id);
+        if (i >= 0) db.kbArtigos.splice(i, 1);
+      },
+    ),
+
   visualizar: (id: number) =>
     request<void>(
       async () => {

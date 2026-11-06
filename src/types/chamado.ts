@@ -127,6 +127,8 @@ export interface Anexo {
   mimeType: string;
   enviadoPor: string;
   criadoEm: string;
+  /** Comentário ao qual o arquivo foi anexado; `null` ou ausente quando é um anexo do chamado. */
+  comentarioId?: ID | null;
 }
 
 export interface HistoricoEvento {
@@ -146,6 +148,8 @@ export interface VinculoItil {
 export type CsatChamado = { avaliado: false } | { avaliado: true; nota: number; comentario: string | null; respondidoEm: string };
 
 export interface ChamadoDetalhe extends Chamado {
+  /** Solução técnica informada ao resolver. */
+  resolucao?: string | null;
   comentarios: Comentario[];
   worklogs: Worklog[];
   pausas: PausaSla[];

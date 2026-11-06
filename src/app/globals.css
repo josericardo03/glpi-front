@@ -61,6 +61,23 @@
 .prose-kb code {
   @apply rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] text-brand-primary;
 }
+.prose-kb pre {
+  @apply my-4 overflow-x-auto rounded-md bg-brand-darker px-4 py-3 font-mono text-[0.85em] leading-relaxed text-slate-100;
+  white-space: pre;
+}
+.prose-kb pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+.prose-kb li > ul,
+.prose-kb li > ol {
+  @apply my-1.5;
+}
+.prose-kb ul ul {
+  list-style-type: circle;
+}
+.prose-kb a {
+  @apply text-brand-primary underline;
+}
 .prose-kb strong {
   @apply font-semibold text-brand-darker;
 }

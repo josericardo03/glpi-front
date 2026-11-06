@@ -178,14 +178,15 @@ export const chamadosService = {
    * Multipart com o campo `arquivo`. O Content-Type explícito impede o axios de serializar o FormData
    * como JSON (padrão da instância); no navegador ele é trocado pelo valor com boundary.
    */
-  uploadAnexo: (id: number, file: File) => {
+  uploadAnexo: (id: number, file: File, idComentario?: number) => {
     if (file.size > ANEXO_MAX_BYTES) return Promise.reject(new Error(`"${file.name}" excede o limite de 20 MB.`));
     const form = new FormData();
     form.append('arquivo', file, file.name);
+    if (idComentario) form.append('id_comentario', String(idComentario));
     return request<unknown>(
       () => data(api.post(`/chamados/${id}/anexos`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120_000 })),
       () => {
-        const a: Anexo = { id: uid(), chamadoId: id, nomeArquivo: file.name, tamanhoBytes: file.size, mimeType: file.type, enviadoPor: 'Você', criadoEm: nowIso() };
+        const a: Anexo = { id: uid(), chamadoId: id, nomeArquivo: file.name, tamanhoBytes: file.size, mimeType: file.type, enviadoPor: 'Você', criadoEm: nowIso(), comentarioId: idComentario ?? null };
         find(id).anexos.push(a);
         return a;
       },
@@ -247,8 +248,8 @@ export const chamadosService = {
     ),
 
   comentar: (id: number, body: { conteudo: string; interno: boolean }) =>
-    request<unknown>(
-      () => data(api.post(`/chamados/${id}/comentarios`, { mensagem: body.conteudo, tipo_visibilidade: body.interno ? 'INTERNO' : 'PUBLICO' })),
+    request<{ id: number }>(
+      () => data(api.post<{ id: number }>(`/chamados/${id}/comentarios`, { mensagem: body.conteudo, tipo_visibilidade: body.interno ? 'INTERNO' : 'PUBLICO' })),
       () => {
         const u = db.usuarios[0]!;
         const cm: Comentario = { id: uid(), chamadoId: id, autorId: u.id, autorNome: u.nome, autorPapel: 'Técnico', ...body, criadoEm: nowIso() };

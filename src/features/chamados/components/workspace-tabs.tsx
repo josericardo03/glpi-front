@@ -1,37 +1,134 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import { Clock, Download, FileText, History, Lock, Paperclip, UserRound } from 'lucide-react';
-import { Avatar, Badge, Button, Checkbox, EmptyState, Field, FileDropzone, Input, Textarea, useToast } from '@/components/ui';
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react';
+import { BookmarkPlus, Clock, Download, FileText, History, Lock, Paperclip, Trash2, UserRound, X } from 'lucide-react';
+import { Avatar, Badge, Button, Checkbox, EmptyState, Field, FileDropzone, Input, Select, Textarea, useToast } from '@/components/ui';
+import { TextoComLinks } from '@/components/ui/texto-com-links';
 import { getErrorMessage } from '@/lib/api';
 import { downloadBlob } from '@/lib/csv';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatDateTime, formatMinutes, plural, timeAgo } from '@/lib/format';
 import type { Anexo, ChamadoDetalhe } from '@/types';
 import { useAuth } from '@/features/auth/auth-provider';
-import { useComentar, useUploadAnexo, useWorklog } from '../hooks/use-chamados';
+import { useComentarComAnexos, useUploadAnexo, useWorklog } from '../hooks/use-chamados';
 import { chamadosService } from '../services/chamados.service';
-import { ANEXO_EXTENSOES, ANEXO_MAX_MB } from '../utils/anexos';
+import { ANEXO_EXTENSOES, ANEXO_MAX_BYTES, ANEXO_MAX_MB } from '../utils/anexos';
+import {
+  carregarRespostasPropias,
+  RESPOSTAS_PADRAO,
+  salvarRespostasPropias,
+  tituloDaResposta,
+  type RespostaPronta,
+} from '../utils/respostas-prontas';
+
+const NOTA_MAX = 5000;
+
+/** Print colado não tem nome: gera um, com a extensão do tipo da imagem. */
+function nomeDaCaptura(file: File) {
+  if (file.name && file.name !== 'image.png') return file;
+  const ext = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+  const agora = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  const nome = `captura-${agora.getFullYear()}${p(agora.getMonth() + 1)}${p(agora.getDate())}-${p(agora.getHours())}${p(agora.getMinutes())}${p(agora.getSeconds())}.${ext}`;
+  return new File([file], nome, { type: file.type });
+}
 
 export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
   const [texto, setTexto] = useState('');
   const [interno, setInterno] = useState(false);
-  const comentar = useComentar(chamado.id);
-  const { hasRole } = useAuth();
+  const [arquivos, setArquivos] = useState<File[]>([]);
+  const [proprias, setProprias] = useState<RespostaPronta[]>([]);
+  const [respostaId, setRespostaId] = useState('');
+  const [baixando, setBaixando] = useState<number | null>(null);
+  const campo = useRef<HTMLTextAreaElement>(null);
+  const seletor = useRef<HTMLInputElement>(null);
+  const comentar = useComentarComAnexos(chamado.id);
+  const toast = useToast();
+  const { hasRole, user } = useAuth();
   const podeNotaInterna = hasRole('TECNICO');
 
-  function onSubmit(e: FormEvent) {
+  useEffect(() => {
+    if (user && podeNotaInterna) setProprias(carregarRespostasPropias(user.id));
+  }, [user, podeNotaInterna]);
+
+  const respostas = [...RESPOSTAS_PADRAO, ...proprias];
+  const respostaSelecionada = respostas.find((r) => r.id === respostaId);
+
+  function adicionarArquivos(novos: File[]) {
+    const aceitos: File[] = [];
+    for (const original of novos) {
+      const arquivo = nomeDaCaptura(original);
+      const ext = `.${arquivo.name.split('.').pop()?.toLowerCase()}`;
+      if (!ANEXO_EXTENSOES.includes(ext)) toast.error(`Formato não permitido: ${arquivo.name}`);
+      else if (arquivo.size > ANEXO_MAX_BYTES) toast.error(`${arquivo.name} excede o limite de ${ANEXO_MAX_MB} MB.`);
+      else if (!arquivos.some((f) => f.name === arquivo.name && f.size === arquivo.size)) aceitos.push(arquivo);
+    }
+    if (aceitos.length) setArquivos((atual) => [...atual, ...aceitos]);
+  }
+
+  /** Imagens coladas (Ctrl+V) viram anexos do comentário; texto colado segue o fluxo normal. */
+  function aoColar(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const imagens = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'));
+    if (!imagens.length) return;
     e.preventDefault();
-    if (!texto.trim()) return;
+    adicionarArquivos(imagens);
+  }
+
+  function inserirResposta(id: string) {
+    setRespostaId(id);
+    const resposta = respostas.find((r) => r.id === id);
+    if (!resposta) return;
+    setTexto((atual) => (atual.trim() ? `${atual.replace(/\s+$/, '')}\n\n${resposta.texto}` : resposta.texto).slice(0, NOTA_MAX));
+    campo.current?.focus();
+  }
+
+  function salvarComoResposta() {
+    const conteudo = texto.trim();
+    if (!conteudo || !user) return;
+    const nova: RespostaPronta = { id: `propria-${Date.now()}`, titulo: tituloDaResposta(conteudo), texto: conteudo, propria: true };
+    const lista = [...proprias, nova];
+    if (!salvarRespostasPropias(user.id, lista)) return toast.error('Não foi possível salvar neste navegador.');
+    setProprias(lista);
+    toast.success('Resposta pronta salva neste navegador.');
+  }
+
+  function removerResposta() {
+    if (!user || !respostaSelecionada?.propria) return;
+    const lista = proprias.filter((r) => r.id !== respostaSelecionada.id);
+    salvarRespostasPropias(user.id, lista);
+    setProprias(lista);
+    setRespostaId('');
+  }
+
+  function enviar() {
+    if (!texto.trim() || comentar.isPending) return;
     comentar.mutate(
-      { conteudo: texto.trim(), interno: podeNotaInterna && interno },
+      { conteudo: texto.trim(), interno: podeNotaInterna && interno, arquivos },
       {
         onSuccess: () => {
           setTexto('');
           setInterno(false);
+          setArquivos([]);
+          setRespostaId('');
         },
       },
     );
+  }
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    enviar();
+  }
+
+  async function baixar(anexo: Anexo) {
+    setBaixando(anexo.id);
+    try {
+      downloadBlob(await chamadosService.baixarAnexo(anexo), anexo.nomeArquivo);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setBaixando(null);
+    }
   }
 
   const itens = [...chamado.comentarios].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
@@ -43,19 +140,83 @@ export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
           <UserRound className="h-5 w-5" />
         </span>
         <div className="flex-1">
+          {podeNotaInterna && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <div className="min-w-[200px] flex-1 sm:max-w-xs">
+                <Select
+                  aria-label="Inserir resposta pronta"
+                  placeholder="Inserir resposta pronta..."
+                  options={respostas.map((r) => ({ value: r.id, label: r.propria ? `${r.titulo} (minha)` : r.titulo }))}
+                  value={respostaId}
+                  onChange={(e) => inserirResposta(e.target.value)}
+                />
+              </div>
+              {respostaSelecionada?.propria && (
+                <Button type="button" variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={removerResposta}>
+                  Remover
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" icon={<BookmarkPlus className="h-4 w-4" />} disabled={!texto.trim()} onClick={salvarComoResposta}>
+                Salvar como resposta pronta
+              </Button>
+            </div>
+          )}
           <Textarea
+            ref={campo}
             aria-label="Novo comentário"
-            placeholder={podeNotaInterna ? 'Digite um novo comentário ou nota técnica...' : 'Digite um novo comentário...'}
+            placeholder={podeNotaInterna ? 'Digite um novo comentário ou nota técnica... (cole um print com Ctrl+V)' : 'Digite um novo comentário... (cole um print com Ctrl+V)'}
             value={texto}
+            maxLength={NOTA_MAX}
             onChange={(e) => setTexto(e.target.value)}
+            onPaste={aoColar}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                enviar();
+              }
+            }}
             className={cn(interno && 'border-amber-300 bg-amber-50/40')}
           />
+          <div className="mt-1 flex justify-between text-[11px] text-brand-muted">
+            <span>Ctrl+Enter envia</span>
+            <span aria-live="polite">
+              {texto.length}/{NOTA_MAX}
+            </span>
+          </div>
+          {arquivos.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {arquivos.map((f, i) => (
+                <li key={`${f.name}-${i}`} className="flex items-center gap-2 rounded-md border border-brand-border bg-slate-50 px-2.5 py-1 text-xs">
+                  <Paperclip className="h-3.5 w-3.5 text-brand-primary" aria-hidden />
+                  <span className="max-w-[200px] truncate text-brand-darker">{f.name}</span>
+                  <span className="text-brand-muted">{formatBytes(f.size)}</span>
+                  <button type="button" onClick={() => setArquivos(arquivos.filter((_, j) => j !== i))} className="text-brand-muted hover:text-status-critica" aria-label={`Remover ${f.name}`}>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            {podeNotaInterna ? (
-              <Checkbox label="Visível apenas internamente (Nota Técnica)" checked={interno} onChange={(e) => setInterno(e.target.checked)} className="text-brand-muted" />
-            ) : (
-              <span />
-            )}
+            <div className="flex flex-wrap items-center gap-4">
+              {podeNotaInterna && <Checkbox label="Visível apenas internamente (Nota Técnica)" checked={interno} onChange={(e) => setInterno(e.target.checked)} className="text-brand-muted" />}
+              <input
+                ref={seletor}
+                type="file"
+                multiple
+                hidden
+                tabIndex={-1}
+                aria-hidden
+                accept={ANEXO_EXTENSOES.join(',')}
+                onChange={(e) => {
+                  adicionarArquivos([...(e.target.files ?? [])]);
+                  e.target.value = '';
+                }}
+              />
+              <Button type="button" variant="ghost" size="sm" icon={<Paperclip className="h-4 w-4" />} onClick={() => seletor.current?.click()}>
+                Anexar arquivo
+              </Button>
+            </div>
             <Button type="submit" variant="dark" loading={comentar.isPending} disabled={!texto.trim()}>
               Enviar Comentário
             </Button>
@@ -65,27 +226,48 @@ export function FollowupsTab({ chamado }: { chamado: ChamadoDetalhe }) {
 
       <ol className="relative space-y-4 border-t border-brand-border pt-6">
         {itens.length === 0 && <EmptyState title="Nenhum follow-up ainda" description="Os comentários e notas técnicas aparecerão aqui." />}
-        {itens.map((c) => (
-          <li key={c.id} className="flex gap-3">
-            <Avatar name={c.autorNome} size="md" />
-            <div className={cn('flex-1 rounded-lg border p-4', c.interno ? 'border-amber-200 bg-amber-50/60' : 'border-brand-border bg-white')}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-semibold text-brand-darker">
-                  {c.autorNome} {c.autorPapel && <span className="text-xs font-normal text-brand-muted">({c.autorPapel})</span>}
-                </p>
-                <span className="text-xs text-brand-muted" title={formatDateTime(c.criadoEm)}>
-                  {timeAgo(c.criadoEm)}
-                </span>
+        {itens.map((c) => {
+          const anexos = chamado.anexos.filter((a) => a.comentarioId === c.id);
+          return (
+            <li key={c.id} className="flex gap-3">
+              <Avatar name={c.autorNome} size="md" />
+              <div className={cn('min-w-0 flex-1 rounded-lg border p-4', c.interno ? 'border-amber-200 bg-amber-50/60' : 'border-brand-border bg-white')}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-semibold text-brand-darker">
+                    {c.autorNome} {c.autorPapel && <span className="text-xs font-normal text-brand-muted">({c.autorPapel})</span>}
+                  </p>
+                  <span className="text-xs text-brand-muted" title={formatDateTime(c.criadoEm)}>
+                    {timeAgo(c.criadoEm)}
+                  </span>
+                </div>
+                <TextoComLinks texto={c.conteudo} className="mt-2 text-sm text-slate-700" />
+                {anexos.length > 0 && (
+                  <ul className="mt-3 flex flex-wrap gap-2">
+                    {anexos.map((a) => (
+                      <li key={a.id}>
+                        <button
+                          type="button"
+                          onClick={() => baixar(a)}
+                          disabled={baixando === a.id}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-brand-border bg-white px-2.5 py-1 text-xs text-brand-darker hover:border-brand-accent disabled:opacity-60"
+                        >
+                          <Download className="h-3.5 w-3.5 text-brand-primary" aria-hidden />
+                          {a.nomeArquivo}
+                          <span className="text-brand-muted">({formatBytes(a.tamanhoBytes)})</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {c.interno && (
+                  <Badge tone="pendente" className="mt-3">
+                    <Lock className="h-3 w-3" /> Comentário interno
+                  </Badge>
+                )}
               </div>
-              <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{c.conteudo}</p>
-              {c.interno && (
-                <Badge tone="pendente" className="mt-3">
-                  <Lock className="h-3 w-3" /> Comentário interno
-                </Badge>
-              )}
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

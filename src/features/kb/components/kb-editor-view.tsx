@@ -2,9 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { FolderPlus, Save } from 'lucide-react';
-import { Button, Callout, Card, CardBody, CardHeader, ErrorState, Field, Input, PageHeader, PageLoader, Select } from '@/components/ui';
+import { Button, Callout, Card, CardBody, CardHeader, ErrorState, Field, Input, PageHeader, PageLoader, Select, useToast } from '@/components/ui';
 import { getErrorMessage } from '@/lib/api';
 import type { KbArtigo, StatusArtigoKb } from '@/types';
 import { contarPalavras } from '../documento';
@@ -21,6 +21,43 @@ const STATUS_EDICAO: StatusArtigoKb[] = [...STATUS_NOVO, 'ARQUIVADO'];
 
 type Erros = Partial<Record<'titulo' | 'conteudo' | 'categoria', string>>;
 
+/* ---------------------- Rascunho local (neste navegador) ---------------------- */
+
+interface RascunhoLocal {
+  titulo: string;
+  conteudo: string;
+  categoriaId: string;
+  status: StatusArtigoKb;
+  salvoEm: string;
+}
+
+const chaveRascunho = (id?: number) => `itsm_kb_rascunho_${id ?? 'novo'}`;
+/** Marca o artigo criado só para guardar uma imagem, que pode ser descartado se o usuário desistir. */
+const chaveAuto = (id: number) => `itsm_kb_auto_${id}`;
+
+function lerRascunho(chave: string): RascunhoLocal | null {
+  try {
+    const r = JSON.parse(localStorage.getItem(chave) ?? 'null') as RascunhoLocal | null;
+    return r && typeof r.titulo === 'string' && typeof r.conteudo === 'string' && typeof r.salvoEm === 'string' ? r : null;
+  } catch {
+    return null;
+  }
+}
+function gravarRascunho(chave: string, r: RascunhoLocal) {
+  try {
+    localStorage.setItem(chave, JSON.stringify(r));
+  } catch {
+    // sem espaço ou armazenamento bloqueado: o rascunho local é só uma garantia extra
+  }
+}
+function apagarRascunho(chave: string) {
+  try {
+    localStorage.removeItem(chave);
+  } catch {
+    // idem
+  }
+}
+
 /** Sem `id`, cria um artigo; com `id`, carrega o artigo e edita via PATCH. */
 export function KbEditorView({ id }: { id?: number }) {
   const artigo = useKbArtigo(id ?? 0);
@@ -33,6 +70,7 @@ export function KbEditorView({ id }: { id?: number }) {
 function EditorForm({ artigo }: { artigo?: KbArtigo }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const { data: categorias, isLoading: carregandoCategorias } = useKbCategorias();
   const [titulo, setTitulo] = useState(artigo?.titulo ?? '');
   const [conteudo, setConteudo] = useState(artigo?.conteudoMarkdown ?? '');
@@ -50,7 +88,81 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
   categoriaRef.current = categoriaId;
 
   const idAtual = idCriado ?? artigo?.id;
-  const aoSalvar = (r: { id: number }) => router.push(`/kb/artigos/${r.id}`);
+
+  const chave = chaveRascunho(artigo?.id);
+  const original = {
+    titulo: artigo?.titulo ?? '',
+    conteudo: (artigo?.conteudoMarkdown ?? '').trim(),
+    categoriaId: artigo ? String(artigo.categoriaId) : '',
+    status: artigo?.status ?? 'PUBLICADO',
+  };
+  const sujo = titulo !== original.titulo || conteudo.trim() !== original.conteudo || categoriaId !== original.categoriaId || status !== original.status;
+  const salvou = useRef(false);
+  const [pendente, setPendente] = useState<RascunhoLocal | null>(null);
+  const [editorInicial, setEditorInicial] = useState(artigo?.conteudoMarkdown ?? '');
+  const [versaoEditor, setVersaoEditor] = useState(0);
+
+  // Ao abrir: há um rascunho local mais novo que o artigo salvo?
+  useEffect(() => {
+    const r = lerRascunho(chave);
+    if (!r) return;
+    const diferente = r.titulo !== original.titulo || r.conteudo.trim() !== original.conteudo;
+    const maisNovo = !artigo || new Date(r.salvoEm) > new Date(artigo.atualizadoEm);
+    if (diferente && maisNovo) setPendente(r);
+    else apagarRascunho(chave);
+    // só na montagem
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Enquanto edita: guarda uma cópia local a cada pausa na digitação.
+  useEffect(() => {
+    if (pendente || salvou.current) return;
+    const espera = setTimeout(() => {
+      if (sujo) gravarRascunho(chave, { titulo, conteudo, categoriaId, status, salvoEm: new Date().toISOString() });
+      else apagarRascunho(chave);
+    }, 800);
+    return () => clearTimeout(espera);
+  }, [titulo, conteudo, categoriaId, status, pendente, sujo, chave]);
+
+  // Fechar ou recarregar a aba com alterações não salvas pede confirmação.
+  useEffect(() => {
+    if (!sujo) return;
+    const avisar = (e: BeforeUnloadEvent) => {
+      if (salvou.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [sujo]);
+
+  function restaurarRascunho() {
+    if (!pendente) return;
+    setTitulo(pendente.titulo);
+    setConteudo(pendente.conteudo);
+    setCategoriaId(pendente.categoriaId);
+    setStatus(pendente.status);
+    setEditorInicial(pendente.conteudo);
+    setVersaoEditor((v) => v + 1);
+    setPendente(null);
+  }
+
+  function descartarRascunhoLocal() {
+    apagarRascunho(chave);
+    setPendente(null);
+  }
+
+  const aoSalvar = (r: { id: number }) => {
+    salvou.current = true;
+    apagarRascunho(chave);
+    apagarRascunho(chaveRascunho(undefined));
+    try {
+      sessionStorage.removeItem(chaveAuto(r.id));
+    } catch {
+      // idem
+    }
+    router.push(`/kb/artigos/${r.id}`);
+  };
   const criar = useCriarArtigoKb(aoSalvar);
   const atualizar = useAtualizarArtigoKb(idAtual ?? 0, aoSalvar);
   const salvando = criar.isPending || atualizar.isPending;
@@ -82,6 +194,11 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
       status: 'RASCUNHO',
     });
     guardarId(criado.id);
+    try {
+      sessionStorage.setItem(chaveAuto(criado.id), '1');
+    } catch {
+      // sem sessionStorage o rascunho só não será oferecido para descarte
+    }
     return criado.id;
   }
 
@@ -103,7 +220,11 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
       conteudo: texto.length >= 3 ? texto : tituloRef.current.trim(),
       status: artigo?.status ?? 'RASCUNHO',
     });
-    if (!artigo) router.replace(`/kb/artigos/${id}/editar`);
+    if (!artigo) {
+      // O texto já está no servidor: a cópia local do artigo novo deixa de valer.
+      apagarRascunho(chaveRascunho(undefined));
+      router.replace(`/kb/artigos/${id}/editar`);
+    }
     else void queryClient.invalidateQueries({ queryKey: kbKeys.artigo(id) });
   }
 
@@ -127,6 +248,31 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
     else criar.mutate(input);
   }
 
+  /** Sai do editor; se o rascunho só existe por causa de uma imagem enviada, oferece descartá-lo. */
+  async function cancelar() {
+    let automatico = false;
+    try {
+      automatico = !!idAtual && sessionStorage.getItem(chaveAuto(idAtual)) === '1' && (!artigo || artigo.status === 'RASCUNHO');
+    } catch {
+      automatico = false;
+    }
+    if (idAtual && automatico && window.confirm('Este rascunho foi criado automaticamente quando você enviou uma imagem e ainda não foi salvo por você. Descartá-lo?')) {
+      try {
+        await kbService.removerRascunho(idAtual);
+        sessionStorage.removeItem(chaveAuto(idAtual));
+        salvou.current = true;
+        apagarRascunho(chave);
+        apagarRascunho(chaveRascunho(undefined));
+        await queryClient.invalidateQueries({ queryKey: kbKeys.all });
+        router.push('/kb');
+        return;
+      } catch (err) {
+        toast.error(getErrorMessage(err));
+      }
+    }
+    router.push(voltar);
+  }
+
   const palavras = contarPalavras(conteudo);
   const opcoesStatus = (idAtual ? STATUS_EDICAO : STATUS_NOVO).map((s) => ({ value: s, label: STATUS_ARTIGO[s].label }));
   const voltar = idAtual ? `/kb/artigos/${idAtual}` : '/kb';
@@ -143,6 +289,20 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
         ]}
       />
 
+      {pendente && (
+        <Callout tone="warning" title="Há um rascunho não salvo neste navegador" className="mb-6">
+          <p>Salvo localmente em {new Date(pendente.salvoEm).toLocaleString('pt-BR')}. Deseja continuar de onde parou?</p>
+          <div className="mt-3 flex gap-2">
+            <Button type="button" size="sm" onClick={restaurarRascunho}>
+              Restaurar rascunho
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={descartarRascunhoLocal}>
+              Descartar
+            </Button>
+          </div>
+        </Callout>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card>
           <CardBody className="space-y-4">
@@ -153,8 +313,9 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
               <Field label="Conteúdo" required error={erros.conteudo}>
                 {(fid) => (
                   <RichEditor
+                    key={versaoEditor}
                     id={fid}
-                    inicial={artigo?.conteudoMarkdown ?? ''}
+                    inicial={editorInicial}
                     onChange={setConteudo}
                     invalid={!!erros.conteudo}
                     antesDaImagem={antesDaImagem}
@@ -207,7 +368,7 @@ function EditorForm({ artigo }: { artigo?: KbArtigo }) {
             <Button type="submit" size="lg" className="w-full" loading={salvando} icon={<Save className="h-4 w-4" />}>
               {rotuloSalvar}
             </Button>
-            <Button variant="outline" size="lg" className="w-full" onClick={() => router.push(voltar)}>
+            <Button variant="outline" size="lg" className="w-full" onClick={() => void cancelar()}>
               Cancelar
             </Button>
           </div>

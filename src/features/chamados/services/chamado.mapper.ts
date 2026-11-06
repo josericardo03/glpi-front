@@ -98,6 +98,7 @@ export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): Chamado
 
   return {
     ...base,
+    resolucao: c.resolucao,
     itensConfiguracao: c.ativos.map((a) => ({ id: a.id, nome: a.nome, detalhe: a.codigo_patrimonio })),
     problemas: c.problemas,
     mudancas: c.mudancas,
@@ -127,6 +128,7 @@ export function toChamadoDetalhe(c: ApiChamadoDetalhe, ctx: ChamadoCtx): Chamado
       mimeType: a.tipo_mime,
       enviadoPor: '—',
       criadoEm: a.data_upload,
+      comentarioId: a.id_comentario ?? null,
     })),
     worklogs: c.worklogs.map((w) => ({
       id: w.id,

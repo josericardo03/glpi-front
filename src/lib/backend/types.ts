@@ -156,6 +156,7 @@ export interface ApiComentario {
 export interface ApiAnexo {
   id: number;
   id_chamado: number;
+  id_comentario?: number | null;
   nome_arquivo: string;
   tipo_mime: string;
   tamanho_bytes: number;

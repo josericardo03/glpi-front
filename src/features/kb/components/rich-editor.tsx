@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Code, ImagePlus, Link2, List, ListOrdered, MessageSquareWarning, Redo2, Undo2 } from 'lucide-react';
+import { Code, ImagePlus, IndentDecrease, IndentIncrease, Link2, List, ListOrdered, MessageSquareWarning, Redo2, SquareCode, Undo2 } from 'lucide-react';
 import { Button, Input, useToast } from '@/components/ui';
 import { markdownParaHtml } from '@/components/ui/markdown';
 import { cn } from '@/lib/utils';
-import { htmlParaMarkdown, urlDeLink } from '../documento';
+import { htmlColado, htmlParaMarkdown, urlDeLink } from '../documento';
 import { altDeArquivo, imagemAceita, IMAGEM_MAX_BYTES } from '../imagem';
 import { carregarImagens, ImagemAmpliada } from './conteudo-artigo';
 
@@ -22,9 +22,16 @@ interface Props {
   aoInserirImagem?: (markdown: string) => Promise<void>;
 }
 
-type Formato = 'bold' | 'italic' | 'underline' | 'ul' | 'ol' | 'h2' | 'h3' | 'quote';
+type Formato = 'bold' | 'italic' | 'underline' | 'ul' | 'ol' | 'h2' | 'h3' | 'quote' | 'pre';
 
-const VAZIO: Record<Formato, boolean> = { bold: false, italic: false, underline: false, ul: false, ol: false, h2: false, h3: false, quote: false };
+const VAZIO: Record<Formato, boolean> = { bold: false, italic: false, underline: false, ul: false, ol: false, h2: false, h3: false, quote: false, pre: false };
+
+/** O navegador só insere HTML colado já filtrado; aqui só se decide se há algo a inserir. */
+const temConteudo = (html: string) => {
+  const aux = document.createElement('div');
+  aux.innerHTML = html;
+  return !!aux.textContent?.trim() || !!aux.querySelector('pre,br');
+};
 
 export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, enviarImagem, aoInserirImagem }: Props) {
   const toast = useToast();
@@ -46,6 +53,9 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
   const ampliarRef = useRef(setAmpliada);
   ampliarRef.current = setAmpliada;
   const receberImagemRef = useRef<(file: File, range: Range | null) => void>(() => {});
+  const abrirLinkRef = useRef<() => void>(() => {});
+  const ultimaFaixa = useRef<Range | null>(null);
+  const barra = useRef<HTMLDivElement>(null);
   const htmlInicial = useRef(markdownParaHtml(inicial));
   const [ativo, setAtivo] = useState(VAZIO);
   const [linkAberto, setLinkAberto] = useState(false);
@@ -91,9 +101,41 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
           return;
         }
         e.preventDefault();
-        document.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? '');
+        const simples = e.clipboardData?.getData('text/plain') ?? '';
+        const html = e.clipboardData?.getData('text/html') ?? '';
+        const sel = window.getSelection();
+        const emCodigo = !!sel?.anchorNode && !!(sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement)?.closest('pre');
+        // Formatação colada (Word, Docs, páginas) é reduzida ao que o editor representa; em bloco de código vai texto puro.
+        const limpo = html && !emCodigo ? htmlColado(html) : '';
+        if (limpo && temConteudo(limpo)) document.execCommand('insertHTML', false, limpo);
+        else document.execCommand('insertText', false, simples);
         marcarVazio(el!);
         onChangeRef.current(htmlParaMarkdown(el!));
+      });
+      // Atalhos: Ctrl+K abre o link; Tab / Shift+Tab recuam itens de lista (fora de lista, Tab segue o foco normal).
+      el.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          abrirLinkRef.current();
+          return;
+        }
+        if (e.key !== 'Tab' || e.ctrlKey || e.metaKey || e.altKey) return;
+        const sel = window.getSelection();
+        const no = sel?.anchorNode;
+        const dentroDeItem = !!no && !!(no instanceof Element ? no : no.parentElement)?.closest('li');
+        if (!dentroDeItem) return;
+        e.preventDefault();
+        document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+        marcarVazio(el!);
+        onChangeRef.current(htmlParaMarkdown(el!));
+      });
+      // Arrastar texto de dentro do próprio editor move o trecho; vindo de fora, entra como texto puro.
+      let arrastandoInterno = false;
+      el.addEventListener('dragstart', () => {
+        arrastandoInterno = true;
+      });
+      el.addEventListener('dragend', () => {
+        arrastandoInterno = false;
       });
       el.addEventListener('dragover', (e) => {
         if (![...(e.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) return;
@@ -107,7 +149,25 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
       el.addEventListener('drop', (e) => {
         delete el!.dataset.soltar;
         const imagem = arquivoDeTransferencia(e.dataTransfer);
-        if (!imagem) return;
+        if (!imagem) {
+          if (arrastandoInterno) {
+            arrastandoInterno = false;
+            return;
+          }
+          // HTML arrastado de outra página não entra no editor: só o texto.
+          e.preventDefault();
+          const solto = e.dataTransfer?.getData('text/plain') ?? '';
+          const ponto = faixaNoPonto(e.clientX, e.clientY);
+          if (solto && ponto && el!.contains(ponto.startContainer)) {
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(ponto);
+            document.execCommand('insertText', false, solto);
+            marcarVazio(el!);
+            onChangeRef.current(htmlParaMarkdown(el!));
+          }
+          return;
+        }
         e.preventDefault();
         const range = faixaNoPonto(e.clientX, e.clientY);
         receberImagemRef.current(imagem, range && el!.contains(range.startContainer) ? range : null);
@@ -155,6 +215,7 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
       const el = folha.current;
       const sel = window.getSelection();
       if (!el || !sel?.anchorNode || !el.contains(sel.anchorNode)) return;
+      if (sel.rangeCount) ultimaFaixa.current = sel.getRangeAt(0).cloneRange();
       const bloco = String(document.queryCommandValue('formatBlock')).toLowerCase();
       const proximo: Record<Formato, boolean> = {
         bold: document.queryCommandState('bold'),
@@ -165,6 +226,7 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
         h2: bloco === 'h2',
         h3: bloco === 'h3',
         quote: bloco === 'blockquote',
+        pre: bloco === 'pre',
       };
       setAtivo((atual) => ((Object.keys(proximo) as Formato[]).every((k) => atual[k] === proximo[k]) ? atual : proximo));
     };
@@ -173,9 +235,27 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
   }, []);
 
   function comando(cmd: string, valor?: string) {
-    folha.current?.focus();
+    const el = folha.current;
+    el?.focus();
+    const sel = window.getSelection();
+    // Abrir o seletor de estilo tira a seleção do texto: volta para onde estava.
+    if (el && sel && !(sel.anchorNode && el.contains(sel.anchorNode)) && ultimaFaixa.current) {
+      sel.removeAllRanges();
+      sel.addRange(ultimaFaixa.current);
+    }
     document.execCommand(cmd, false, valor);
     publicar();
+  }
+
+  /** Recuo só faz sentido em lista (cria sublista); fora dela o navegador geraria uma citação. */
+  function recuo(cmd: 'indent' | 'outdent') {
+    const no = window.getSelection()?.anchorNode;
+    const emLista = !!no && !!(no instanceof Element ? no : no.parentElement)?.closest('li') && !!folha.current?.contains(no);
+    if (!emLista) {
+      toast.info('O recuo vale para itens de lista. Crie uma lista primeiro.');
+      return;
+    }
+    comando(cmd);
   }
 
   function lista(cmd: 'insertUnorderedList' | 'insertOrderedList') {
@@ -184,6 +264,7 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
     comando(cmd);
   }
 
+  abrirLinkRef.current = abrirLink;
   function abrirLink() {
     const sel = window.getSelection();
     faixa.current = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
@@ -238,23 +319,30 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
     setEnviando(true);
     try {
       const figura = await enviarRef.current(file);
-      const img = document.createElement('img');
-      img.alt = figura.alt || altDeArquivo(file.name);
-      img.dataset.api = figura.href;
       const local = URL.createObjectURL(file);
       blobs.current.push(local);
-      img.src = local;
-      img.dataset.carregada = '1';
-      img.draggable = false;
       el.focus();
+      const sel = window.getSelection();
       const range = faixa.current;
       if (range && el.contains(range.startContainer)) {
-        const sel = window.getSelection();
         sel?.removeAllRanges();
         sel?.addRange(range);
         range.collapse(false);
-        range.insertNode(img);
-      } else el.appendChild(img);
+      } else {
+        const fim = document.createRange();
+        fim.selectNodeContents(el);
+        fim.collapse(false);
+        sel?.removeAllRanges();
+        sel?.addRange(fim);
+      }
+      // Pelo execCommand a imagem entra no histórico do navegador, então Ctrl+Z a remove.
+      document.execCommand('insertImage', false, local);
+      const img = [...el.querySelectorAll('img')].find((candidata) => candidata.getAttribute('src') === local);
+      if (!img) throw new Error('Não foi possível inserir a imagem.');
+      img.alt = figura.alt || altDeArquivo(file.name);
+      img.dataset.api = figura.href;
+      img.dataset.carregada = '1';
+      img.draggable = false;
       publicar();
       await aoInserirRef.current?.(htmlParaMarkdown(el));
       toast.success('Imagem inserida.');
@@ -288,7 +376,21 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
 
   return (
     <div className={cn('overflow-hidden rounded-lg border bg-white', invalid ? 'border-status-critica' : 'border-brand-border')}>
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-brand-border bg-slate-50 px-2 py-1.5">
+      <div
+        ref={barra}
+        role="toolbar"
+        aria-label="Formatação do texto"
+        aria-controls={id}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+          const itens = [...(barra.current?.querySelectorAll<HTMLElement>('button, select') ?? [])];
+          const atual = itens.indexOf(document.activeElement as HTMLElement);
+          if (atual < 0) return;
+          e.preventDefault();
+          itens[(atual + (e.key === 'ArrowRight' ? 1 : -1) + itens.length) % itens.length]?.focus();
+        }}
+        className="flex items-center gap-1 overflow-x-auto border-b border-brand-border bg-slate-50 px-2 py-1.5"
+      >
         <select
           aria-label="Estilo do parágrafo"
           value={estilo}
@@ -319,16 +421,25 @@ export function RichEditor({ id, inicial, invalid, onChange, antesDaImagem, envi
           <Ferramenta rotulo="Lista numerada" ativo={ativo.ol} onClick={() => lista('insertOrderedList')}>
             <ListOrdered className="h-4 w-4" />
           </Ferramenta>
+          <Ferramenta rotulo="Diminuir recuo (Shift+Tab)" onClick={() => recuo('outdent')}>
+            <IndentDecrease className="h-4 w-4" />
+          </Ferramenta>
+          <Ferramenta rotulo="Aumentar recuo (Tab)" onClick={() => recuo('indent')}>
+            <IndentIncrease className="h-4 w-4" />
+          </Ferramenta>
         </Grupo>
         <Divisor />
         <Grupo>
           <Ferramenta rotulo="Destaque" ativo={ativo.quote} onClick={() => comando('formatBlock', ativo.quote ? '<div>' : '<blockquote>')}>
             <MessageSquareWarning className="h-4 w-4" />
           </Ferramenta>
-          <Ferramenta rotulo="Código" onClick={aplicarCodigo}>
+          <Ferramenta rotulo="Código no texto" onClick={aplicarCodigo}>
             <Code className="h-4 w-4" />
           </Ferramenta>
-          <Ferramenta rotulo="Link" ativo={linkAberto} onClick={abrirLink}>
+          <Ferramenta rotulo="Bloco de código" ativo={ativo.pre} onClick={() => comando('formatBlock', ativo.pre ? '<div>' : '<pre>')}>
+            <SquareCode className="h-4 w-4" />
+          </Ferramenta>
+          <Ferramenta rotulo="Link (Ctrl+K)" ativo={linkAberto} onClick={abrirLink}>
             <Link2 className="h-4 w-4" />
           </Ferramenta>
           <Ferramenta rotulo={enviando ? 'Enviando imagem' : 'Imagem. Também dá para colar ou soltar o arquivo'} onClick={escolherImagem}>

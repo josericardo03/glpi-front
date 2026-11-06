@@ -27,6 +27,7 @@ import { useCreateChamado } from '../hooks/use-chamados';
 import { ANEXO_EXTENSOES, ANEXO_MAX_MB } from '../utils/anexos';
 import { calcularPrioridade, categoriaAceitaTipo, politicaAplicavel } from '../utils/prioridade';
 import { PRIORIDADE_META } from './chamado-badges';
+import { SugestoesKb } from './sugestoes-kb';
 
 const ORIGENS: { value: Origem; label: string }[] = [
   { value: 'TELEFONE', label: 'Telefone' },
@@ -44,6 +45,8 @@ const URGENCIAS = [
   { value: 'MEDIO', label: 'Média' },
   { value: 'ALTO', label: 'Alta' },
 ];
+
+const DESCRICAO_MAX = 10000;
 
 type Errors = Partial<Record<'titulo' | 'descricao' | 'categoriaId', string>>;
 
@@ -133,6 +136,7 @@ export function NovoChamadoForm() {
               <Field label="Título do Chamado" required error={errors.titulo}>
                 {(id) => <Input id={id} placeholder="Resumo curto e objetivo do problema ou solicitação" value={titulo} onChange={(e) => setTitulo(e.target.value)} invalid={!!errors.titulo} maxLength={255} />}
               </Field>
+              <SugestoesKb titulo={titulo} />
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
                   <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-brand-muted">Tipo</p>
@@ -158,6 +162,7 @@ export function NovoChamadoForm() {
                     className="min-h-[180px]"
                     placeholder="Descreva os detalhes técnicos, passos para reproduzir ou justificativa da solicitação..."
                     value={descricao}
+                    maxLength={DESCRICAO_MAX}
                     onChange={(e) => setDescricao(e.target.value)}
                     invalid={!!errors.descricao}
                   />

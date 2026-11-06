@@ -139,11 +139,22 @@ export function useAtualizarStatusLote() {
   });
 }
 
-export function useComentar(id: number) {
-  return useApiMutation({
-    mutationFn: (body: { conteudo: string; interno: boolean }) => chamadosService.comentar(id, body),
-    invalidate: [chamadosKeys.detail(id)],
-    successMessage: 'Comentário enviado.',
+/** Envia o comentário e, em seguida, os arquivos presos a ele (`id_comentario`). Falha de upload não desfaz o comentário. */
+export function useComentarComAnexos(id: number) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: async ({ conteudo, interno, arquivos }: { conteudo: string; interno: boolean; arquivos: File[] }) => {
+      const comentario = await chamadosService.comentar(id, { conteudo, interno });
+      const envios = await Promise.allSettled(arquivos.map((f) => chamadosService.uploadAnexo(id, f, comentario.id)));
+      return { falhas: arquivos.filter((_, i) => envios[i]!.status === 'rejected').map((f) => f.name) };
+    },
+    onSuccess: async ({ falhas }) => {
+      await qc.invalidateQueries({ queryKey: chamadosKeys.detail(id) });
+      if (falhas.length) toast.info(`Comentário enviado, mas ${plural(falhas.length, 'arquivo não foi enviado', 'arquivos não foram enviados')}: ${falhas.join(', ')}. Anexe pela aba Anexos.`);
+      else toast.success('Comentário enviado.');
+    },
+    onError: (err) => toast.error(getErrorMessage(err)),
   });
 }
 
