@@ -222,6 +222,7 @@ export const slaService = {
 
 export const LOGO_URL_RE = /^https?:\/\/\S+$/i;
 export const LOGO_URL_MAX = 255;
+export const LOGO_MAX_BYTES = 1024 * 1024;
 
 const BRANDING_PADRAO = { corPrimaria: '#0056B3', corSecundaria: '#0F172A', corDestaque: '#3B82F6', corFundo: '#F4F6F9' };
 
@@ -242,22 +243,34 @@ export const brandingService = {
       },
       () => db.branding,
     ),
-  salvar: (b: Branding) =>
+  /**
+   * Com `arquivoLogo`, a imagem é enviada primeiro (multipart, campo `arquivo`) e o caminho devolvido pela API
+   * vai em `logo_url`. Sem arquivo, vale a URL informada (ou nenhum logotipo).
+   */
+  salvar: (b: Branding, arquivoLogo?: File | null) =>
     request<unknown>(
-      () => {
-        if (b.logoUrl && !LOGO_URL_RE.test(b.logoUrl)) {
-          return Promise.reject(new Error('Informe o logotipo como uma URL pública (a API não aceita upload de arquivo).'));
+      async () => {
+        let logo = b.logoUrl;
+        if (arquivoLogo) {
+          if (arquivoLogo.size > LOGO_MAX_BYTES) throw new Error('O logotipo deve ter no máximo 1 MB.');
+          const form = new FormData();
+          form.append('arquivo', arquivoLogo, arquivoLogo.name);
+          // Content-Type explícito: impede o axios de serializar o FormData como JSON (no navegador vira multipart com boundary).
+          const enviado = await data<{ logo_url: string }>(
+            api.post('/branding/logo', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 }),
+          );
+          logo = enviado.logo_url;
+        } else if (logo && !LOGO_URL_RE.test(logo)) {
+          throw new Error('Envie um arquivo de imagem ou informe uma URL https:// pública.');
         }
-        if (b.logoUrl && b.logoUrl.length > LOGO_URL_MAX) {
-          return Promise.reject(new Error(`A URL do logotipo deve ter no máximo ${LOGO_URL_MAX} caracteres.`));
-        }
+        if (logo && logo.length > LOGO_URL_MAX) throw new Error(`A URL do logotipo deve ter no máximo ${LOGO_URL_MAX} caracteres.`);
         return data(
           api.post('/admin/branding', {
             nome_portal: b.nomePortal.trim(),
             cor_primaria: b.corPrimaria,
             cor_secundaria: b.corSecundaria,
             cor_fundo: b.corFundo,
-            logo_url: assetPath(b.logoUrl) ?? '',
+            logo_url: assetPath(logo) ?? '',
           }),
         );
       },

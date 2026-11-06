@@ -76,7 +76,7 @@ export const useAtualizarFeriado = (onSuccess?: () => void) =>
 export const useExcluirFeriado = (onSuccess?: () => void) =>
   useApiMutation({ mutationFn: (id: number) => slaService.excluirFeriado(id), invalidate: [adminKeys.feriados], successMessage: 'Feriado excluído.', onSuccess });
 export const useSalvarBranding = () =>
-  useApiMutation({ mutationFn: (b: Branding) => brandingService.salvar(b), invalidate: [adminKeys.branding], successMessage: 'Branding atualizado para todo o portal.' });
+  useApiMutation({ mutationFn: (v: { branding: Branding; arquivoLogo?: File | null }) => brandingService.salvar(v.branding, v.arquivoLogo), invalidate: [adminKeys.branding], successMessage: 'Branding atualizado para todo o portal.' });
 export const useCreateIntegracao = () =>
   useApiMutation({ mutationFn: (i: IntegracaoInput) => integracoesService.create(i), invalidate: [adminKeys.integracoes], successMessage: 'Conector criado.' });
 export const useAtualizarIntegracao = () =>

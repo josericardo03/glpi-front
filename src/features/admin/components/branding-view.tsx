@@ -23,7 +23,7 @@ import { recursos } from '@/lib/recursos';
 import { cn } from '@/lib/utils';
 import { textoInvalido } from '@/lib/validation';
 import type { Branding } from '@/types';
-import { LOGO_URL_MAX, LOGO_URL_RE } from '../admin.service';
+import { LOGO_MAX_BYTES, LOGO_URL_MAX, LOGO_URL_RE } from '../admin.service';
 import { useBranding, useSalvarBranding } from '../use-admin';
 import { brandingVars } from './branding-applier';
 
@@ -119,8 +119,8 @@ function BrandingPreview({ b }: { b: Branding }) {
   );
 }
 
-function erroLogo(url: string | null) {
-  if (!url || url.startsWith('data:image/')) return undefined;
+function erroLogo(url: string | null, temArquivo: boolean) {
+  if (!url || temArquivo || url.startsWith('data:image/')) return undefined;
   if (!LOGO_URL_RE.test(url)) return 'Informe uma URL válida, como https://exemplo.com/logo.png';
   if (url.length > LOGO_URL_MAX) return `Máximo de ${LOGO_URL_MAX} caracteres.`;
   return undefined;
@@ -146,8 +146,12 @@ export function BrandingView() {
   const contrasteSecundaria = HEX_RE.test(form.corSecundaria) ? contrastWithWhite(form.corSecundaria) : 0;
   const secundariaClara = contrasteSecundaria > 0 && contrasteSecundaria < SECUNDARIA_MIN_CONTRASTE;
   const erroNome = textoInvalido(form.nomePortal, { rotulo: 'O nome', min: 2, max: 100 });
-  const logoErro = avancado ? undefined : erroLogo(form.logoUrl);
-  const valido = paletaValida && !secundariaClara && !erroNome && !logoErro;
+  // A secundária só trava a publicação quando o admin a alterou para um tom claro: o valor padrão que já vem do
+  // servidor (#6C757D) fica abaixo do mínimo e não pode impedir quem só quer trocar o logotipo ou o nome.
+  const secundariaAlterada = form.corSecundaria !== data.corSecundaria;
+  const bloqueiaSecundaria = secundariaClara && secundariaAlterada;
+  const logoErro = erroLogo(form.logoUrl, logo.length > 0);
+  const valido = paletaValida && !bloqueiaSecundaria && !erroNome && !logoErro;
 
   function onLogo(files: File[]) {
     setLogo(files);
@@ -179,7 +183,7 @@ export function BrandingView() {
               icon={<Save className="h-4 w-4" />}
               disabled={!draft || !valido}
               loading={salvar.isPending}
-              onClick={() => draft && salvar.mutate(draft, { onSuccess: reset })}
+              onClick={() => draft && salvar.mutate({ branding: draft, arquivoLogo: logo[0] ?? null }, { onSuccess: reset })}
             >
               Publicar Alterações
             </Button>
@@ -206,7 +210,7 @@ export function BrandingView() {
           <Card>
             <CardHeader
               title="Logotipo"
-              description={avancado ? 'PNG, SVG ou JPG com fundo transparente, até 2MB.' : 'Endereço público (https://) de uma imagem PNG, SVG ou JPG.'}
+              description="Envie um arquivo PNG, JPG, WebP ou SVG (até 1 MB), de preferência com fundo transparente."
               icon={<ImageIcon className="h-5 w-5" />}
               actions={
                 form.logoUrl && (
@@ -224,27 +228,36 @@ export function BrandingView() {
                   <ImageIcon className="h-8 w-8 text-brand-muted" aria-hidden />
                 )}
               </div>
-              <div className="flex-1">
-                {avancado ? (
-                  <FileDropzone files={logo} onChange={onLogo} accept={['.png', '.svg', '.jpg', '.jpeg']} maxSizeMb={2} multiple={false} onError={toast.error} />
-                ) : (
-                  <Field label="URL do logotipo" error={logoErro} hint={logoQuebrado && !logoErro ? 'Não foi possível carregar a imagem deste endereço.' : undefined}>
-                    {(id) => (
-                      <Input
-                        id={id}
-                        type="url"
-                        inputMode="url"
-                        placeholder="https://exemplo.com/logo.png"
-                        maxLength={LOGO_URL_MAX}
-                        value={form.logoUrl ?? ''}
-                        onChange={(e) => {
-                          setLogoQuebrado(false);
-                          set({ logoUrl: e.target.value.trim() || null });
-                        }}
-                      />
-                    )}
-                  </Field>
-                )}
+              <div className="flex-1 space-y-4">
+                <FileDropzone
+                  files={logo}
+                  onChange={onLogo}
+                  accept={['.png', '.svg', '.jpg', '.jpeg', '.webp']}
+                  maxSizeMb={LOGO_MAX_BYTES / (1024 * 1024)}
+                  multiple={false}
+                  onError={toast.error}
+                />
+                <Field
+                  label="Ou use o endereço (URL) de uma imagem"
+                  error={logoErro}
+                  hint={logoQuebrado && !logoErro ? 'Não foi possível carregar a imagem deste endereço.' : undefined}
+                >
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="url"
+                      inputMode="url"
+                      placeholder="https://exemplo.com/logo.png"
+                      maxLength={LOGO_URL_MAX}
+                      value={logo.length > 0 ? '' : (form.logoUrl ?? '')}
+                      disabled={logo.length > 0}
+                      onChange={(e) => {
+                        setLogoQuebrado(false);
+                        set({ logoUrl: e.target.value.trim() || null });
+                      }}
+                    />
+                  )}
+                </Field>
               </div>
             </CardBody>
           </Card>
@@ -279,9 +292,10 @@ export function BrandingView() {
             </Callout>
           )}
           {secundariaClara && (
-            <Callout tone="danger" title={`Cor secundária clara demais (${contrasteSecundaria.toFixed(1)}:1)`}>
+            <Callout tone={bloqueiaSecundaria ? 'danger' : 'warning'} title={`Cor secundária clara demais (${contrasteSecundaria.toFixed(1)}:1)`}>
               A cor secundária é usada no menu lateral e no texto das páginas e precisa de contraste mínimo de{' '}
               {SECUNDARIA_MIN_CONTRASTE}:1. Enquanto isso, o portal mantém o tom padrão.
+              {bloqueiaSecundaria ? ' Escolha um tom mais escuro para poder publicar.' : ' Você pode publicar as outras mudanças normalmente; use “Restaurar padrão” para corrigir esta cor.'}
             </Callout>
           )}
         </div>
