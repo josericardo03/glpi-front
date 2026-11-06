@@ -8,12 +8,21 @@ import { mapaService } from './mapa.service';
 export const mapaKeys = {
   all: ['mapa'] as const,
   softwares: ['mapa', 'softwares'] as const,
+  busca: (texto: string) => ['mapa', 'softwares', texto] as const,
   mapas: ['mapa', 'mapas'] as const,
   ligacoes: (idMapa: number) => ['mapa', 'ligacoes', idMapa] as const,
   impacto: (id: number, idMapa: number) => ['mapa', 'impacto', idMapa, id] as const,
 };
 
-export const useSoftwares = () => useQuery({ queryKey: mapaKeys.softwares, queryFn: mapaService.softwares, staleTime: 30_000 });
+/** Softwares que combinam com o texto (busca no servidor, até 20). Com texto vazio, os primeiros da lista. */
+export const useBuscaSoftwares = (texto: string, ativo = true) =>
+  useQuery({
+    queryKey: mapaKeys.busca(texto),
+    queryFn: () => mapaService.buscarSoftwares(texto),
+    enabled: ativo,
+    staleTime: 15_000,
+    placeholderData: (anterior) => anterior,
+  });
 
 export const useMapas = () => useQuery({ queryKey: mapaKeys.mapas, queryFn: mapaService.mapas, staleTime: 15_000 });
 
@@ -61,17 +70,27 @@ export const useCadastrarSoftware = () =>
     successMessage: (_, input) => `${input.nome.trim()} cadastrado.`,
   });
 
+export const useAtualizarSoftware = () =>
+  useApiMutation({
+    mutationFn: (input: { id: number; nome: string; codigo: string }) =>
+      mapaService.atualizarSoftware(input.id, { nome: input.nome, codigo: input.codigo }),
+    // O nome aparece no desenho de qualquer mapa e nas listas de ativos.
+    invalidate: [mapaKeys.all, ativosKeys.all],
+    successMessage: (_, input) => `${input.nome.trim()} atualizado.`,
+  });
+
 export const useLigar = () =>
   useApiMutation({
     mutationFn: (input: { origem: number; destino: number; idMapa: number }) =>
       mapaService.ligar(input.origem, input.destino, input.idMapa),
-    invalidate: [mapaKeys.all],
+    // Marca desenho e impacto como velhos e atualiza a lista de mapas (contagem). Só o mapa aberto é baixado de novo; os demais esperam ser abertos.
+    invalidate: [mapaKeys.mapas, ['mapa', 'ligacoes'], ['mapa', 'impacto']],
     successMessage: 'Dependência cadastrada.',
   });
 
 export const useDesligar = () =>
   useApiMutation({
     mutationFn: (input: { origem: number; destino: number }) => mapaService.desligar(input.origem, input.destino),
-    invalidate: [mapaKeys.all],
+    invalidate: [mapaKeys.mapas, ['mapa', 'ligacoes'], ['mapa', 'impacto']],
     successMessage: 'Dependência removida.',
   });

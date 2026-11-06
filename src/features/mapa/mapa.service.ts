@@ -4,6 +4,8 @@ import { data, getAll, request } from '@/lib/http';
 import * as db from '@/mocks/db';
 import type { AtivoDetalhe } from '@/types';
 
+const LIMITE_BUSCA = 20;
+
 export interface Software {
   id: number;
   nome: string;
@@ -121,16 +123,51 @@ function softwareMock(): Software[] {
 }
 
 export const mapaService = {
-  softwares: () =>
+  /** Até 20 softwares que combinam com o texto (nome ou código); a busca roda no servidor. */
+  buscarSoftwares: (busca: string) =>
     request<Software[]>(
       async () => {
-        const rows = await getAll<ApiAtivo>('/ativos', 100, { tipo_ativo: 'LICENCA_SOFTWARE' });
-        return rows
-          .filter((a) => a.tipo_ativo === 'LICENCA_SOFTWARE')
-          .map((a) => ({ id: a.id, nome: a.nome, codigo: a.codigo_patrimonio }))
-          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+        const r = await api.get<ApiAtivo[]>('/ativos', {
+          params: { tipo_ativo: 'LICENCA_SOFTWARE', busca: busca.trim() || undefined, limite: LIMITE_BUSCA, pagina: 1 },
+        });
+        return r.data.map((a) => ({ id: a.id, nome: a.nome, codigo: a.codigo_patrimonio }));
       },
-      () => softwareMock().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+      () => {
+        const termo = busca.trim().toLowerCase();
+        return softwareMock()
+          .filter((s) => !termo || s.nome.toLowerCase().includes(termo) || s.codigo.toLowerCase().includes(termo))
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+          .slice(0, LIMITE_BUSCA);
+      },
+    ),
+
+  atualizarSoftware: (id: number, input: { nome: string; codigo: string }) =>
+    request<Software>(
+      async () => {
+        try {
+          const row = await data<ApiAtivo>(
+            api.patch(`/ativos/${id}`, { nome: input.nome.trim(), codigo_patrimonio: input.codigo.trim() }),
+          );
+          return { id: row.id, nome: row.nome, codigo: row.codigo_patrimonio };
+        } catch (err) {
+          falhar(err, { 404: 'Esse software não existe mais.', 409: 'Esse código de patrimônio já está cadastrado.' });
+        }
+      },
+      () => {
+        const alvo = db.ativos.find((a) => a.id === id && a.tipo === 'LICENCA');
+        if (!alvo) throw new Error('Esse software não existe mais.');
+        const codigo = input.codigo.trim();
+        if (db.ativos.some((a) => a.id !== id && a.codigo.toUpperCase() === codigo.toUpperCase())) {
+          throw new Error('Esse código de patrimônio já está cadastrado.');
+        }
+        alvo.nome = input.nome.trim();
+        alvo.codigo = codigo;
+        for (const l of ligacoesMock) {
+          if (l.origem.id === id) l.origem.nome = alvo.nome;
+          if (l.destino.id === id) l.destino.nome = alvo.nome;
+        }
+        return { id, nome: alvo.nome, codigo };
+      },
     ),
 
   cadastrar: (input: { nome: string; codigo: string }) =>

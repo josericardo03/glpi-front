@@ -1,16 +1,21 @@
 'use client';
 
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link2, Network, Plus, Unlink } from 'lucide-react';
+import { Copy, Link2, Network, Pencil, Plus, Search, Unlink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { EmptyState, ErrorState, PageLoader } from '@/components/ui/feedback';
 import { Field, Input, Select } from '@/components/ui/form';
+import { ConfirmModal } from '@/components/ui/modal';
 import { PageHeader } from '@/components/ui/page-header';
+import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/format';
 import { MapaBarra } from './mapa-barra';
 import { MapaGrafo } from './mapa-grafo';
-import { useCadastrarSoftware, useDesligar, useImpacto, useLigacoes, useLigar, useMapas, useSoftwares } from '../use-mapa';
+import { SoftwareCombobox } from './software-combobox';
+import { SoftwareEditar } from './software-editar';
+import type { Ligacao, Software } from '../mapa.service';
+import { useCadastrarSoftware, useDesligar, useImpacto, useLigacoes, useLigar, useMapas } from '../use-mapa';
 
 const CHAVE_MAPA = 'itsm:mapa-aberto';
 
@@ -26,7 +31,7 @@ function sugerirCodigo(nome: string) {
 }
 
 export function MapaSoftwareView() {
-  const softwares = useSoftwares();
+  const toast = useToast();
   const mapas = useMapas();
   const [mapaId, setMapaId] = useState<number | null>(null);
   const listaMapas = mapas.data ?? [];
@@ -40,13 +45,14 @@ export function MapaSoftwareView() {
   const [nome, setNome] = useState('');
   const [codigo, setCodigo] = useState('');
   const [codigoEditado, setCodigoEditado] = useState(false);
-  const [origem, setOrigem] = useState('');
-  const [destino, setDestino] = useState('');
+  const [origem, setOrigem] = useState<Software | null>(null);
+  const [destino, setDestino] = useState<Software | null>(null);
   const [caidoId, setCaidoId] = useState<number | null>(null);
+  const [busca, setBusca] = useState('');
+  const [editandoSoftware, setEditandoSoftware] = useState(false);
+  const [desligando, setDesligando] = useState<Ligacao | null>(null);
 
   const impacto = useImpacto(caidoId, mapaAtual?.id ?? null);
-  const lista = softwares.data ?? [];
-  const opcoes = lista.map((s) => ({ value: s.id, label: s.nome }));
   const arestas = useMemo(() => ligacoes.data ?? [], [ligacoes.data]);
   // Só os softwares que aparecem neste mapa podem ser marcados como "caiu".
   const opcoesDoMapa = useMemo(() => {
@@ -67,8 +73,9 @@ export function MapaSoftwareView() {
     return [...grupos.entries()].sort((a, b) => a[0] - b[0]);
   }, [impacto.data]);
 
-  const carregando = softwares.isLoading || mapas.isLoading || (mapaAtual != null && ligacoes.isLoading);
-  const erro = softwares.error ?? mapas.error ?? ligacoes.error;
+  const afetados = impacto.data?.afetados ?? [];
+  const carregando = mapas.isLoading || (mapaAtual != null && ligacoes.isLoading);
+  const erro = mapas.error ?? ligacoes.error;
 
   useEffect(() => {
     try {
@@ -82,6 +89,7 @@ export function MapaSoftwareView() {
   function escolherMapa(id: number) {
     setMapaId(id);
     setCaidoId(null);
+    setBusca('');
     try {
       window.localStorage.setItem(CHAVE_MAPA, String(id));
     } catch {
@@ -114,7 +122,25 @@ export function MapaSoftwareView() {
   function aoLigar(e: FormEvent) {
     e.preventDefault();
     if (!origem || !destino || !mapaAtual) return;
-    ligar.mutate({ origem: Number(origem), destino: Number(destino), idMapa: mapaAtual.id }, { onSuccess: () => { setOrigem(''); setDestino(''); } });
+    ligar.mutate({ origem: origem.id, destino: destino.id, idMapa: mapaAtual.id }, { onSuccess: () => { setOrigem(null); setDestino(null); } });
+  }
+
+  function aoConfirmarDesligar() {
+    if (!desligando) return;
+    desligar.mutate({ origem: desligando.idOrigem, destino: desligando.idDestino }, { onSuccess: () => setDesligando(null) });
+  }
+
+  async function copiarImpacto() {
+    if (!impacto.data || !mapaAtual) return;
+    const linhas = [`Impacto da queda de ${impacto.data.ativo.nome} (mapa ${mapaAtual.nome})`];
+    for (const [nivel, itens] of porNivel) linhas.push(`Nível ${nivel}: ${itens.map((i) => i.nome).join(', ')}`);
+    linhas.push(`Total: ${afetados.length} software(s) afetado(s)`);
+    try {
+      await navigator.clipboard.writeText(linhas.join('\n'));
+      toast.success('Lista copiada.');
+    } catch {
+      toast.error('Não foi possível copiar. Selecione o texto e copie manualmente.');
+    }
   }
 
   return (
@@ -128,7 +154,7 @@ export function MapaSoftwareView() {
       {carregando ? (
         <PageLoader />
       ) : erro ? (
-        <ErrorState message="Não foi possível carregar o mapa." onRetry={() => { void softwares.refetch(); void mapas.refetch(); void ligacoes.refetch(); }} />
+        <ErrorState message="Não foi possível carregar o mapa." onRetry={() => { void mapas.refetch(); void ligacoes.refetch(); }} />
       ) : (
         <>
         <MapaBarra mapas={listaMapas} atual={mapaAtual} onEscolher={escolherMapa} />
@@ -136,7 +162,17 @@ export function MapaSoftwareView() {
           <div className="space-y-4">
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
-                <CardHeader title="Cadastrar software" description="Entra nos dois selects do mapa." icon={<Plus className="h-4 w-4" />} />
+                <CardHeader
+                  title="Cadastrar software"
+                  description="Fica disponível para qualquer mapa."
+                  icon={<Plus className="h-4 w-4" />}
+                  actions={
+                    <Button type="button" variant="outline" size="sm" onClick={() => setEditandoSoftware(true)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                      Editar
+                    </Button>
+                  }
+                />
                 <CardBody>
                   <form className="space-y-3" onSubmit={aoCadastrar}>
                     <Field label="Nome" required>
@@ -169,12 +205,12 @@ export function MapaSoftwareView() {
                 <CardBody>
                   <form className="space-y-3" onSubmit={aoLigar}>
                     <Field label="Origem — quem depende">
-                      {(id) => <Select id={id} options={opcoes} placeholder="Selecione" value={origem} onChange={(e) => setOrigem(e.target.value)} />}
+                      {(id) => <SoftwareCombobox id={id} valor={origem} onChange={setOrigem} excluirId={destino?.id} disabled={!mapaAtual} />}
                     </Field>
                     <Field label="Destino — do que depende">
-                      {(id) => <Select id={id} options={opcoes} placeholder="Selecione" value={destino} onChange={(e) => setDestino(e.target.value)} />}
+                      {(id) => <SoftwareCombobox id={id} valor={destino} onChange={setDestino} excluirId={origem?.id} disabled={!mapaAtual} />}
                     </Field>
-                    <Button type="submit" disabled={ligar.isPending || !origem || !destino || lista.length < 1 || !mapaAtual}>
+                    <Button type="submit" disabled={ligar.isPending || !origem || !destino || !mapaAtual}>
                       {ligar.isPending ? 'Ligando…' : 'Ligar'}
                     </Button>
                   </form>
@@ -203,7 +239,10 @@ export function MapaSoftwareView() {
                   />
                 ) : (
                   <>
-                    <MapaGrafo ligacoes={arestas} caidoId={caidoId} afetados={impacto.data?.afetados ?? []} onEscolher={setCaidoId} />
+                    <div className="mb-3">
+                      <Input leftIcon={<Search className="h-4 w-4" />} aria-label="Buscar software no mapa" placeholder="Buscar software neste mapa" value={busca} onChange={(e) => setBusca(e.target.value)} />
+                    </div>
+                    <MapaGrafo ligacoes={arestas} caidoId={caidoId} afetados={afetados} onEscolher={setCaidoId} busca={busca} />
                     <ul className="mt-4 flex flex-wrap gap-3 text-xs text-brand-muted">
                       <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-red-400 bg-red-50" /> Caiu</li>
                       <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-amber-400 bg-amber-50" /> Nível 1, depende direto</li>
@@ -224,8 +263,7 @@ export function MapaSoftwareView() {
                             type="button"
                             variant="danger-outline"
                             size="sm"
-                            disabled={desligar.isPending}
-                            onClick={() => desligar.mutate({ origem: l.idOrigem, destino: l.idDestino })}
+                                                        onClick={() => setDesligando(l)}
                           >
                             <Unlink className="h-3.5 w-3.5" />
                             Desligar
@@ -259,10 +297,20 @@ export function MapaSoftwareView() {
                 <p className="text-sm text-brand-muted">Calculando impacto…</p>
               ) : impacto.isError ? (
                 <ErrorState message="Não foi possível calcular o impacto." onRetry={() => void impacto.refetch()} />
-              ) : impacto.data && impacto.data.afetados.length === 0 ? (
+              ) : impacto.data && afetados.length === 0 ? (
                 <p className="text-sm text-brand-darker">Nada mais cai junto com {impacto.data.ativo.nome}.</p>
               ) : (
                 <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-brand-darker">
+                      {afetados.length} afetado(s)
+                      <span className="ml-1 font-normal text-brand-muted">· {afetados.filter((a) => a.nivel === 1).length} direto(s)</span>
+                    </p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => void copiarImpacto()}>
+                      <Copy className="h-3.5 w-3.5" />
+                      Copiar
+                    </Button>
+                  </div>
                   {porNivel.map(([nivel, itens]) => (
                     <div key={nivel}>
                       <p className="text-xs font-semibold uppercase tracking-wide text-brand-muted">
@@ -285,6 +333,23 @@ export function MapaSoftwareView() {
         </div>
         </>
       )}
+
+      {editandoSoftware && <SoftwareEditar onClose={() => setEditandoSoftware(false)} />}
+
+      <ConfirmModal
+        open={desligando != null}
+        onClose={() => setDesligando(null)}
+        onConfirm={aoConfirmarDesligar}
+        loading={desligar.isPending}
+        title="Desligar dependência"
+        confirmLabel="Desligar"
+      >
+        {desligando && (
+          <p>
+            Remover a dependência <strong>{desligando.origem.nome}</strong> → <strong>{desligando.destino.nome}</strong>? Os dois softwares continuam cadastrados.
+          </p>
+        )}
+      </ConfirmModal>
     </div>
   );
 }
