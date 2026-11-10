@@ -7,3 +7,6 @@ next-env.d.ts
 !.env.example
 npm-debug.log*
 .DS_Store
+
+# certificados do servidor
+certs/

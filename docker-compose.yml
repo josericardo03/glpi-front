@@ -74,7 +74,8 @@ services:
       BACKUP_INTERVALO_HORAS: ${BACKUP_INTERVALO_HORAS:-24}
       BACKUP_RETENCAO_DIAS: ${BACKUP_RETENCAO_DIAS:-14}
     volumes:
-      - ./backup:/backup:ro
+      # `:z` ajusta o rótulo do SELinux (Rocky/RHEL). Em sistemas sem SELinux é ignorado.
+      - ./backup:/backup:ro,z
       - backups:/backups
       - anexos:/dados/anexos:ro
     entrypoint: ["sh", "/backup/agendar.sh"]
@@ -89,8 +90,11 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro,z
+      # Certificados para HTTPS (fullchain.pem e privkey.pem). Ver docs/implantacao.md.
+      - ./certs:/etc/nginx/certs:ro,z
     restart: unless-stopped
 
 volumes:
