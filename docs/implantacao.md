@@ -12,22 +12,18 @@ migrações e cria o administrador inicial sozinha.
 ## Primeira vez
 
 ```bash
-# 1. Clonar os dois repositórios LADO A LADO
-git clone https://github.com/josericardo03/glpi-back.git
+sudo dnf -y install git
 git clone https://github.com/josericardo03/glpi-front.git
 cd glpi-front
-
-# 2. Instalar Docker e liberar o firewall (uma vez só)
-bash deploy/preparar-servidor.sh
-# saia e entre de novo no SSH para o grupo docker valer
-
-# 3. Subir tudo
-cd glpi-front
-bash deploy/iniciar.sh --url http://teste-glpi.sema.mt.gov.br
+bash deploy/subir-tudo.sh --url http://teste-glpi.sema.mt.gov.br
 ```
 
-O passo 3 cria o `.env` com segredos aleatórios, constrói as imagens, sobe os cinco serviços e mostra o
-login do administrador **uma única vez**. Depois abra o endereço no navegador.
+O `subir-tudo.sh` clona a API ao lado (`../glpi-back`), instala o Docker e libera o firewall, cria o `.env`
+com segredos aleatórios, constrói as imagens, sobe os cinco serviços e liga a atualização automática.
+Mostra o login do administrador **uma única vez**. Depois abra o endereço no navegador.
+
+Cada etapa também roda separada: `preparar-servidor.sh`, `iniciar.sh` e `atualizacao-automatica.sh`.
+Com `--imagens` ele usa as imagens prontas do `ghcr.io` em vez de construir no servidor.
 
 > **Guarde o `.env`.** A senha do Postgres fica gravada no volume do banco. Se o arquivo se perder, a API
 > não entra mais no banco. Faça uma cópia fora do servidor.
@@ -66,12 +62,22 @@ copie periodicamente para outro lugar. Detalhes e restauração em `glpi-back/do
 docker compose exec backup sh /backup/backup.sh   # backup agora
 ```
 
-## Deploy automático (opcional)
+## CI/CD
 
-Os workflows `docker.yml` só fazem o deploy se a variável `DEPLOY_HOST` existir no GitHub. Se você ligar
-isso, o workflow **sobrescreve o `.env`** com os segredos do GitHub. Então copie para lá os mesmos valores
-do `.env` atual (principalmente `POSTGRES_PASSWORD`, `JWT_SECRET` e `INTEGRACOES_SECRET`), ou o banco e as
-integrações já gravadas deixam de funcionar.
+- **CI:** a cada push, o GitHub roda lint, testes e build nos dois repositórios.
+- **Imagens:** a cada push na `main`, o GitHub publica as imagens no `ghcr.io`.
+- **CD:** o servidor busca as imagens novas sozinho, a cada 5 minutos (`deploy/atualizacao-automatica.sh`,
+  agendado no cron; registro em `~/glpi-atualizar.log`). Rode `bash deploy/atualizar.sh` para forçar agora,
+  e `bash deploy/atualizacao-automatica.sh --desligar` para parar.
+
+Para o servidor baixar as imagens, os pacotes `glpi-back` e `glpi-front` do GitHub precisam ser públicos
+ou o servidor precisa de `docker login ghcr.io` com um token `read:packages`.
+
+O deploy por SSH dos workflows (`atualizar` em `docker.yml`) **não serve para este servidor**: ele tem IP
+interno e os servidores do GitHub não o alcançam. Ele só roda se a variável `DEPLOY_HOST` existir, então
+fica desligado. Se um dia você usar um servidor com IP público e ligá-lo, o workflow **sobrescreve o `.env`**
+com os segredos do GitHub: copie para lá os mesmos valores do `.env` atual (principalmente
+`POSTGRES_PASSWORD`, `JWT_SECRET` e `INTEGRACOES_SECRET`).
 
 ## Problemas comuns
 
