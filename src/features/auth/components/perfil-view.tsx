@@ -145,9 +145,10 @@ export function PerfilView() {
 
       <Card className="mb-6 overflow-hidden">
         <div className="h-20 bg-gradient-to-r from-brand-darker via-brand-dark to-brand-primary" />
-        <CardBody className="-mt-12 flex flex-col gap-4 sm:flex-row sm:items-end">
-          <Avatar name={user.nome} src={user.avatarUrl} size="xl" className="ring-4" />
-          <div className="min-w-0 flex-1">
+        {/* Só o avatar sobe sobre o banner. O texto fica abaixo dele: texto escuro sobre o degradê escuro some. */}
+        <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <Avatar name={user.nome} src={user.avatarUrl} size="xl" className="-mt-12 shrink-0 ring-4" />
+          <div className="min-w-0 flex-1 sm:pt-1">
             <h2 className="text-xl font-bold text-brand-darker">{user.nome}</h2>
             <p className="text-sm text-brand-muted">
               {user.cargo}
@@ -158,7 +159,7 @@ export function PerfilView() {
             </div>
           </div>
           {user.criadoEm && (
-            <p className="inline-flex items-center gap-1.5 text-xs text-brand-muted">
+            <p className="inline-flex items-center gap-1.5 text-xs text-brand-muted sm:self-end">
               <CalendarClock className="h-4 w-4" aria-hidden /> Membro desde {formatDate(user.criadoEm)}
             </p>
           )}
