@@ -14,7 +14,7 @@ RAIZ="$(pwd)"
 MARCA="$RAIZ/deploy/atualizar.sh"
 
 if [ "${1:-}" = "--desligar" ]; then
-  ( crontab -l 2>/dev/null | grep -v "$MARCA" ) | crontab - || true
+  { crontab -l 2>/dev/null | grep -v -F "$MARCA" || true; } | crontab -
   echo "Atualização automática desligada."
   exit 0
 fi
@@ -47,7 +47,8 @@ sudo systemctl enable --now crond
 
 LOG="$HOME/glpi-atualizar.log"
 LINHA="*/$INTERVALO * * * * flock -n /tmp/glpi-atualizar.lock bash $RAIZ/deploy/atualizar.sh >> $LOG 2>&1"
-( crontab -l 2>/dev/null | grep -v "$MARCA"; echo "$LINHA" ) | crontab -
+# `|| true`: o grep sai com 1 quando não sobra nenhuma linha (agenda vazia), e o set -e abortaria antes de gravar.
+{ crontab -l 2>/dev/null | grep -v -F "$MARCA" || true; echo "$LINHA"; } | crontab -
 
 echo
 echo "Atualização automática ligada: a cada $INTERVALO min. Registro em $LOG"
